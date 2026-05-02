@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Go Yeda - AI Question Dashboard</title>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -14,13 +15,13 @@
 
     h1 {
       color: #1f3f78;
+      margin-bottom: 5px;
     }
 
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 30px;
+    .small {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 25px;
     }
 
     .card {
@@ -28,19 +29,21 @@
       padding: 20px;
       border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 25px;
+      max-width: 260px;
     }
 
     .number {
-      font-size: 32px;
+      font-size: 34px;
       font-weight: bold;
       color: #1f3f78;
+      margin-top: 8px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       background: white;
-      margin-bottom: 30px;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -56,117 +59,110 @@
     th {
       background: #1f3f78;
       color: white;
+      font-weight: bold;
     }
 
-    .section-title {
-      margin-top: 35px;
-      color: #1f3f78;
+    tr:hover {
+      background: #f9fbff;
     }
 
-    .small {
+    .question {
+      max-width: 700px;
+      line-height: 1.5;
+    }
+
+    .loading {
       color: #666;
-      font-size: 13px;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+    }
+
+    .error {
+      color: #b00020;
+      background: #fff0f0;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
     }
   </style>
 </head>
 
 <body>
   <h1>לוח בקרה לשאלות AI - Go Yeda</h1>
-  <p class="small">ניתוח שאלות שחניכים שואלים דרך Question Bot</p>
+  <p class="small">רשימת שאלות שנשאלו על ידי חניכים דרך Question Bot</p>
 
-  <div class="cards">
-    <div class="card">
-      <div>סה״כ שאלות</div>
-      <div id="total" class="number">...</div>
-    </div>
+  <div class="card">
+    <div>סה״כ שאלות</div>
+    <div id="total" class="number">...</div>
   </div>
 
-  <h2 class="section-title">השאלות החוזרות ביותר</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>שאלה</th>
-        <th>מספר פעמים</th>
-      </tr>
-    </thead>
-    <tbody id="topQuestions"></tbody>
-  </table>
+  <div id="error"></div>
 
-  <h2 class="section-title">שאלות לפי קורס</h2>
   <table>
     <thead>
       <tr>
-        <th>קורס</th>
-        <th>מספר שאלות</th>
-      </tr>
-    </thead>
-    <tbody id="courses"></tbody>
-  </table>
-
-  <h2 class="section-title">חניכים ששאלו הכי הרבה</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>משתמש</th>
-        <th>מספר שאלות</th>
-      </tr>
-    </thead>
-    <tbody id="topUsers"></tbody>
-  </table>
-
-  <h2 class="section-title">שאלות אחרונות</h2>
-  <table>
-    <thead>
-      <tr>
+        <th>שם משתמש</th>
         <th>תאריך</th>
-        <th>משתמש</th>
-        <th>קורס</th>
-        <th>שאלה</th>
+        <th>שם הקורס</th>
+        <th>השאלה</th>
       </tr>
     </thead>
-    <tbody id="latest"></tbody>
+    <tbody id="questionsTable">
+      <tr>
+        <td colspan="4" class="loading">טוען נתונים...</td>
+      </tr>
+    </tbody>
   </table>
 
   <script>
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
     async function loadStats() {
-      const response = await fetch("/api/stats");
-      const data = await response.json();
+      try {
+        const response = await fetch("/api/stats");
+        const data = await response.json();
 
-      document.getElementById("total").innerText = data.totalQuestions || 0;
+        if (!response.ok) {
+          throw new Error(data.error || "שגיאה בטעינת הנתונים");
+        }
 
-      document.getElementById("topQuestions").innerHTML =
-        data.topQuestions.map(item => `
-          <tr>
-            <td>${item.question}</td>
-            <td>${item.count}</td>
-          </tr>
-        `).join("");
+        document.getElementById("total").innerText = data.totalQuestions || 0;
 
-      document.getElementById("courses").innerHTML =
-        data.courses.map(item => `
-          <tr>
-            <td>${item.course}</td>
-            <td>${item.count}</td>
-          </tr>
-        `).join("");
+        const rows = data.rows || [];
 
-      document.getElementById("topUsers").innerHTML =
-        data.topUsers.map(item => `
-          <tr>
-            <td>${item.username}</td>
-            <td>${item.count}</td>
-          </tr>
-        `).join("");
+        if (rows.length === 0) {
+          document.getElementById("questionsTable").innerHTML = `
+            <tr>
+              <td colspan="4">אין עדיין נתונים להצגה</td>
+            </tr>
+          `;
+          return;
+        }
 
-      document.getElementById("latest").innerHTML =
-        data.latest.map(item => `
-          <tr>
-            <td>${new Date(item.created_at).toLocaleString("he-IL")}</td>
-            <td>${item.username}</td>
-            <td>${item.course}</td>
-            <td>${item.question_text}</td>
-          </tr>
-        `).join("");
+        document.getElementById("questionsTable").innerHTML =
+          rows.map(item => `
+            <tr>
+              <td>${escapeHtml(item.username)}</td>
+              <td>${escapeHtml(item.date)}</td>
+              <td>${escapeHtml(item.course)}</td>
+              <td class="question">${escapeHtml(item.question)}</td>
+            </tr>
+          `).join("");
+
+      } catch (error) {
+        document.getElementById("error").innerHTML =
+          `<div class="error">שגיאה: ${escapeHtml(error.message)}</div>`;
+
+        document.getElementById("questionsTable").innerHTML = "";
+      }
     }
 
     loadStats();
