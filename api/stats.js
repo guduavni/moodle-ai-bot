@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     }
 
     const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/question_logs?select=*`,
+      `${SUPABASE_URL}/rest/v1/question_logs?select=created_at,username,course,question_text&order=created_at.desc`,
       {
         headers: {
           apikey: SUPABASE_KEY,
@@ -32,44 +32,18 @@ export default async function handler(req, res) {
 
     const totalQuestions = rows.length;
 
-    const byCourse = {};
-    const byUser = {};
-    const byQuestion = {};
-
-    rows.forEach(row => {
-      const course = row.course || "unknown";
-      const user = row.username || "unknown";
-      const question = row.question_text || "";
-
-      byCourse[course] = (byCourse[course] || 0) + 1;
-      byUser[user] = (byUser[user] || 0) + 1;
-      byQuestion[question] = (byQuestion[question] || 0) + 1;
-    });
-
-    const topQuestions = Object.entries(byQuestion)
-      .map(([question, count]) => ({ question, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    const topUsers = Object.entries(byUser)
-      .map(([username, count]) => ({ username, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    const courses = Object.entries(byCourse)
-      .map(([course, count]) => ({ course, count }))
-      .sort((a, b) => b.count - a.count);
-
-    const latest = rows
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .slice(0, 20);
+    const formattedRows = rows.map(row => ({
+      username: row.username || "לא ידוע",
+      date: row.created_at
+        ? new Date(row.created_at).toLocaleDateString("he-IL")
+        : "",
+      course: row.course || "לא ידוע",
+      question: row.question_text || ""
+    }));
 
     return res.status(200).json({
       totalQuestions,
-      topQuestions,
-      topUsers,
-      courses,
-      latest
+      rows: formattedRows
     });
 
   } catch (error) {
