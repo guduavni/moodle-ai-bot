@@ -1,7 +1,16 @@
 export default async function handler(req, res) {
   try {
-    const { question, prompt } = req.body;
+     
+    let body;
 
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    } catch {
+      body = {};
+    }
+    
+    const question = body?.question || body?.q || "";
+    const prompt = body?.prompt || "You are an aviation instructor";
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
