@@ -1,56 +1,213 @@
-function extractQuestion(text) {
-  if (!text) return "";
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Go Yeda - AI Question Dashboard</title>
 
-  let t = String(text).trim();
-
-  // ניקוי רווחים ושורות מיותרות
-  t = t.replace(/\s+/g, " ");
-
-  // אם הטקסט כולל פתיח הדרכתי, נחתוך ממנו רק אחרי "שאלה:"
-  const questionMarkers = [
-    "שאלה:",
-    "השאלה:",
-    "Question:",
-    "question:"
-  ];
-
-  for (const marker of questionMarkers) {
-    const index = t.indexOf(marker);
-    if (index >= 0) {
-      t = t.substring(index + marker.length).trim();
-      break;
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 30px;
+      direction: rtl;
     }
-  }
 
-  // חיתוך כל מה שמתחיל באפשרויות תשובה
-  const answerMarkers = [
-    "אפשרויות תשובה:",
-    "אפשרויות תשובה",
-    "אפשרויות:",
-    "תשובות:",
-    "אפשרויות התשובה:",
-    "אפשרויות התשובה",
-    "Answer choices:",
-    "Choices:",
-    "Options:"
-  ];
-
-  for (const marker of answerMarkers) {
-    const index = t.indexOf(marker);
-    if (index > 0) {
-      t = t.substring(0, index).trim();
-      break;
+    h1 {
+      color: #1f3f78;
+      margin-bottom: 5px;
     }
-  }
 
-  // חיתוך לפי תחילת אפשרות ממוספרת, רק אם היא נראית כמו תשובה
-  t = t.replace(/\s+(?:1\.|1\)|א\.|א\)|A\.|A\))\s+.+$/s, "").trim();
+    .small {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 25px;
+    }
 
-  // הסרת משפטים שמגיעים לפני השאלה בפורמטים נפוצים
-  t = t.replace(/^.*?שאלה[:：]\s*/s, "").trim();
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 25px;
+      max-width: 260px;
+    }
 
-  // ניקוי סימני סיום מיותרים
-  t = t.replace(/\s+$/g, "").trim();
+    .number {
+      font-size: 34px;
+      font-weight: bold;
+      color: #1f3f78;
+      margin-top: 8px;
+    }
 
-  return t;
-}
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th {
+      background: #1f3f78;
+      color: white;
+      font-weight: bold;
+    }
+
+    tr:hover {
+      background: #f9fbff;
+    }
+
+    .question {
+      max-width: 700px;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .loading {
+      color: #666;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+    }
+
+    .error {
+      color: #b00020;
+      background: #fff0f0;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>לוח בקרה לשאלות AI - Go Yeda</h1>
+  <p class="small">רשימת שאלות שנשאלו על ידי חניכים</p>
+
+  <div class="card">
+    <div>סה״כ שאלות</div>
+    <div id="total" class="number">...</div>
+  </div>
+
+  <div id="error"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>שם משתמש</th>
+        <th>תאריך</th>
+        <th>שם הקורס</th>
+        <th>השאלה</th>
+      </tr>
+    </thead>
+    <tbody id="questionsTable">
+      <tr>
+        <td colspan="4" class="loading">טוען נתונים...</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <script>
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // 🔥 אלגוריתם חיתוך משופר – מוציא רק את השאלה
+    function extractQuestion(text) {
+      if (!text) return "";
+
+      let t = String(text).trim();
+
+      // ניקוי רווחים
+      t = t.replace(/\s+/g, " ");
+
+      // חיפוש "שאלה:"
+      const markers = ["שאלה:", "השאלה:", "Question:", "question:"];
+      for (let m of markers) {
+        const i = t.indexOf(m);
+        if (i >= 0) {
+          t = t.substring(i + m.length).trim();
+          break;
+        }
+      }
+
+      // חיתוך לפני תשובות
+      const answerMarkers = [
+        "אפשרויות תשובה",
+        "אפשרויות:",
+        "תשובות:",
+        "Answer choices",
+        "Choices",
+        "Options"
+      ];
+
+      for (let m of answerMarkers) {
+        const i = t.indexOf(m);
+        if (i > 0) {
+          t = t.substring(0, i).trim();
+          break;
+        }
+      }
+
+      // חיתוך לפי התחלת רשימת תשובות
+      t = t.replace(/\s+(1\.|א\.|A\.)\s.+$/s, "").trim();
+
+      return t;
+    }
+
+    async function loadStats() {
+      try {
+        const response = await fetch("/api/stats");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "שגיאה בטעינת הנתונים");
+        }
+
+        document.getElementById("total").innerText = data.totalQuestions || 0;
+
+        const rows = data.rows || [];
+
+        if (rows.length === 0) {
+          document.getElementById("questionsTable").innerHTML = `
+            <tr>
+              <td colspan="4">אין נתונים</td>
+            </tr>
+          `;
+          return;
+        }
+
+        document.getElementById("questionsTable").innerHTML =
+          rows.map(item => `
+            <tr>
+              <td>${escapeHtml(item.username)}</td>
+              <td>${escapeHtml(item.date)}</td>
+              <td>${escapeHtml(item.course)}</td>
+              <td class="question">${escapeHtml(extractQuestion(item.question))}</td>
+            </tr>
+          `).join("");
+
+      } catch (error) {
+        document.getElementById("error").innerHTML =
+          `<div class="error">${error.message}</div>`;
+      }
+    }
+
+    loadStats();
+  </script>
+</body>
+</html>
