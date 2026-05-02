@@ -69,6 +69,7 @@
     .question {
       max-width: 700px;
       line-height: 1.5;
+      font-weight: 500;
     }
 
     .loading {
@@ -90,7 +91,7 @@
 
 <body>
   <h1>לוח בקרה לשאלות AI - Go Yeda</h1>
-  <p class="small">רשימת שאלות שנשאלו על ידי חניכים דרך Question Bot</p>
+  <p class="small">רשימת שאלות שנשאלו על ידי חניכים</p>
 
   <div class="card">
     <div>סה״כ שאלות</div>
@@ -125,6 +126,30 @@
         .replace(/'/g, "&#039;");
     }
 
+    // ✨ פונקציה שמוציאה רק את השאלה (ללא תשובות)
+    function extractQuestion(text) {
+      if (!text) return "";
+
+      const markers = [
+        "אפשרויות תשובה",
+        "אפשרויות:",
+        "1.",
+        "א.",
+        "א)",
+        "A.",
+        "A)"
+      ];
+
+      for (let marker of markers) {
+        const index = text.indexOf(marker);
+        if (index > 0) {
+          return text.substring(0, index).trim();
+        }
+      }
+
+      return text.trim();
+    }
+
     async function loadStats() {
       try {
         const response = await fetch("/api/stats");
@@ -153,7 +178,7 @@
               <td>${escapeHtml(item.username)}</td>
               <td>${escapeHtml(item.date)}</td>
               <td>${escapeHtml(item.course)}</td>
-              <td class="question">${escapeHtml(item.question)}</td>
+              <td class="question">${escapeHtml(extractQuestion(item.question))}</td>
             </tr>
           `).join("");
 
