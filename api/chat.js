@@ -103,6 +103,22 @@ export default async function handler(req, res) {
       .trim();
     
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
+
+    await fetch(`${process.env.SUPABASE_URL}/rest/v1/question_logs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
+      },
+      body: JSON.stringify({
+        username: username || "unknown",
+        course: course || "unknown",
+        question_text: question,
+        answer: answer
+      })
+    });
+    
     return res.status(200).send(answer);
 
   } catch (error) {
