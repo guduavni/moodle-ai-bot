@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>Go Yeda - AI Question Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 30px;
+      direction: rtl;
+    }
+
+    h1 {
+      color: #1f3f78;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 30px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .number {
+      font-size: 32px;
+      font-weight: bold;
+      color: #1f3f78;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      margin-bottom: 30px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    th, td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th {
+      background: #1f3f78;
+      color: white;
+    }
+
+    .section-title {
+      margin-top: 35px;
+      color: #1f3f78;
+    }
+
+    .small {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>לוח בקרה לשאלות AI - Go Yeda</h1>
+  <p class="small">ניתוח שאלות שחניכים שואלים דרך Question Bot</p>
+
+  <div class="cards">
+    <div class="card">
+      <div>סה״כ שאלות</div>
+      <div id="total" class="number">...</div>
+    </div>
+  </div>
+
+  <h2 class="section-title">השאלות החוזרות ביותר</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>שאלה</th>
+        <th>מספר פעמים</th>
+      </tr>
+    </thead>
+    <tbody id="topQuestions"></tbody>
+  </table>
+
+  <h2 class="section-title">שאלות לפי קורס</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>קורס</th>
+        <th>מספר שאלות</th>
+      </tr>
+    </thead>
+    <tbody id="courses"></tbody>
+  </table>
+
+  <h2 class="section-title">חניכים ששאלו הכי הרבה</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>משתמש</th>
+        <th>מספר שאלות</th>
+      </tr>
+    </thead>
+    <tbody id="topUsers"></tbody>
+  </table>
+
+  <h2 class="section-title">שאלות אחרונות</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>תאריך</th>
+        <th>משתמש</th>
+        <th>קורס</th>
+        <th>שאלה</th>
+      </tr>
+    </thead>
+    <tbody id="latest"></tbody>
+  </table>
+
+  <script>
+    async function loadStats() {
+      const response = await fetch("/api/stats");
+      const data = await response.json();
+
+      document.getElementById("total").innerText = data.totalQuestions || 0;
+
+      document.getElementById("topQuestions").innerHTML =
+        data.topQuestions.map(item => `
+          <tr>
+            <td>${item.question}</td>
+            <td>${item.count}</td>
+          </tr>
+        `).join("");
+
+      document.getElementById("courses").innerHTML =
+        data.courses.map(item => `
+          <tr>
+            <td>${item.course}</td>
+            <td>${item.count}</td>
+          </tr>
+        `).join("");
+
+      document.getElementById("topUsers").innerHTML =
+        data.topUsers.map(item => `
+          <tr>
+            <td>${item.username}</td>
+            <td>${item.count}</td>
+          </tr>
+        `).join("");
+
+      document.getElementById("latest").innerHTML =
+        data.latest.map(item => `
+          <tr>
+            <td>${new Date(item.created_at).toLocaleString("he-IL")}</td>
+            <td>${item.username}</td>
+            <td>${item.course}</td>
+            <td>${item.question_text}</td>
+          </tr>
+        `).join("");
+    }
+
+    loadStats();
+  </script>
+</body>
+</html>
