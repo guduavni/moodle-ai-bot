@@ -85,7 +85,7 @@ export default async function handler(req, res) {
     const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
     const SUPABASE_URL = process.env.SUPABASE_URL;
-
+    
     const SUPABASE_KEY =
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.SUPBASE_SERVICE_ROLE_KEY; // fallback
