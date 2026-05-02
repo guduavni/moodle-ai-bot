@@ -1,14 +1,20 @@
+function decodeHtml(text) {
+  if (!text) return "";
+  return String(text)
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 export default async function handler(req, res) {
   try {
     let body = {};
 
-    // Support GET (Moodle sends parameters in URL)
     if (req.method === "GET") {
       body = req.query || {};
-    }
-
-    // Support POST
-    if (req.method === "POST") {
+    } else if (req.method === "POST") {
       if (typeof req.body === "string") {
         try {
           body = JSON.parse(req.body);
@@ -20,10 +26,10 @@ export default async function handler(req, res) {
       }
     }
 
-    // Extract question
-    const question =
+    const rawQuestion =
       body.question ||
       body.q ||
+      body["amp;q"] ||
       body.message ||
       body.text ||
       body.context ||
@@ -34,23 +40,34 @@ export default async function handler(req, res) {
       body.content ||
       "";
 
-    const systemPrompt =
+    const question = decodeHtml(rawQuestion);
+
+    const rawPrompt =
       body.prompt ||
       body.systemprompt ||
       body.system_prompt ||
+      body["amp;prompt"] ||
+      "";
+
+    const systemPrompt =
+      decodeHtml(rawPrompt) ||
       `אתה מדריך תאוריה תעופתית מקצועי.
 ענה בעברית ברורה, מדויקת ומקצועית.
-אם זו שאלת מבחן – הסבר את ההיגיון ולא רק את התשובה.`;
+אם זו שאלת מבחן – הסבר את ההיגיון ולא רק את התשובה.
+אל תציג JSON.
+אל תציג את השאלה כפי שקיבלת אותה.
+תן תשובה ישירה וברורה לחניך.`;
 
-    // If no question
     if (!question || question.trim().length < 3) {
-      return res.status(400).json({
-        answer: "לא התקבלה שאלה מהמערכת",
-        debug: body
-      });
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(400).send("לא התקבלה שאלה מהמערכת.");
     }
 
-    // Call OpenAI
+    if (!process.env.OPENAI_API_KEY) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(500).send("שגיאת שרת: OPENAI_API_KEY לא מוגדר ב־Vercel.");
+    }
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -69,20 +86,20 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
+    if (!response.ok) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(response.status).send("שגיאה בחיבור ל־OpenAI.");
+    }
+
     const answer =
       data?.choices?.[0]?.message?.content ||
-      "לא התקבלה תשובה מהמודל";
+      "לא התקבלה תשובה מהמודל.";
 
-    return res.status(200).json({
-      answer,
-      message: answer,
-      response: answer
-    });
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(200).send(answer);
 
   } catch (error) {
-    return res.status(500).json({
-      answer: "שגיאת שרת",
-      error: error.message
-    });
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(500).send("שגיאת שרת: " + error.message);
   }
 }
