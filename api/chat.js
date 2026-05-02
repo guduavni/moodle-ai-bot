@@ -12,15 +12,23 @@ function cleanAnswer(text) {
   return String(text || "")
     .replace(/[*#`]/g, "")
     .replace(/-{3,}/g, "")
+    .replace(/\\\(/g, "")
+    .replace(/\\\)/g, "")
+    .replace(/\\\[/g, "")
+    .replace(/\\\]/g, "")
+    .replace(/\$\$/g, "")
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "$1 / $2")
+    .replace(/\\sqrt\{([^{}]+)\}/g, "sqrt($1)")
+    .replace(/\\cdot/g, " x ")
+    .replace(/\\times/g, " x ")
+    .replace(/\\rho/g, "rho")
+    .replace(/\\Delta/g, "Delta")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 export default async function handler(req, res) {
   try {
-    // =============================
-    // 1. קבלת נתונים
-    // =============================
     let body = {};
 
     if (req.method === "GET") {
@@ -37,60 +45,82 @@ export default async function handler(req, res) {
       }
     }
 
-    const username =
+    const username = decodeHtml(
       body.username ||
       body.user ||
-      "unknown";
+      body.userid ||
+      body["amp;username"] ||
+      "unknown"
+    );
 
-    const course =
+    const course = decodeHtml(
       body.course ||
+      body.course_name ||
+      body.coursename ||
       body["amp;course"] ||
-      "unknown";
+      "unknown"
+    );
 
-    const rawQuestion =
+    const question = decodeHtml(
       body.question ||
       body.q ||
       body["amp;q"] ||
       body.message ||
       body.text ||
+      body.context ||
+      body.questionText ||
+      body.question_text ||
+      body.quizQuestion ||
+      body.quiz_question ||
       body.content ||
-      "";
+      ""
+    );
 
-    const question = decodeHtml(rawQuestion);
+    const promptFromMoodle = decodeHtml(
+      body.prompt ||
+      body.systemprompt ||
+      body.system_prompt ||
+      body["amp;prompt"] ||
+      ""
+    );
 
-    const systemPrompt = `
-אתה מדריך תאוריה תעופתית מקצועי.
-ענה בעברית ברורה, מדויקת ומקצועית.
-אם אינך בטוח בתשובה – ציין זאת במפורש.
-אל תנחש נתונים תעופתיים.
-העדף מקורות כמו FAA / Oxford.
-
-אל תשתמש ב:
-*
-#
-\`\`\`
-
-אל תחזיר JSON.
-אל תחזור על השאלה.
-תן תשובה ישירה בלבד.
-`;
+    const systemPrompt =
+      promptFromMoodle ||
+      `You are a professional aviation theory instructor.
+Answer clearly and professionally in Hebrew.
+If this is a quiz question, explain the reasoning and not only the answer.
+If you are not certain about the answer, state it explicitly.
+Do not guess aviation-related data.
+Prefer principles based on established aviation literature such as Oxford or FAA.
+Do not use Markdown.
+Do not use asterisks, hash symbols, code blocks, or LaTeX.
+Write formulas in simple readable plain text only.
+Return only the final answer to the student.`;
 
     if (!question || question.trim().length < 3) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
       return res.status(400).send("לא התקבלה שאלה.");
     }
 
-    // =============================
-    // 2. בדיקת משתנים
-    // =============================
-    const OPENAI_KEY = process.env.OPENAI_API_KEY;
+    const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
 
     const SUPABASE_URL =
       process.env.SUPABASE_URL ||
-      process.env.SUPBASE_URL; // fallback לשם השגוי
-    
+      process.env.SUPBASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      "";
+
     const SUPABASE_KEY =
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPBASE_SERVICE_ROLE_KEY; // fallback
+      process.env.SUPBASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_SECRET_KEY ||
+      process.env.SUPABASE_KEY ||
+      "";
+
+    console.log(
+      "ALL_SUPABASE_ENV_KEYS:",
+      Object.keys(process.env).filter(k => k.toLowerCase().includes("sup"))
+    );
 
     console.log("ENV CHECK:", {
       openai: !!OPENAI_KEY,
@@ -98,37 +128,43 @@ export default async function handler(req, res) {
       supabase_key: !!SUPABASE_KEY
     });
 
+    console.log("QUESTION_LOG_INPUT:", {
+      time: new Date().toISOString(),
+      username,
+      course,
+      question
+    });
+
     if (!OPENAI_KEY) {
-      return res.status(500).send("OPENAI_API_KEY חסר");
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(500).send("OPENAI_API_KEY חסר ב־Vercel.");
     }
 
-    // =============================
-    // 3. קריאה ל-OpenAI
-    // =============================
-    const aiResponse = await fetch(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENAI_KEY}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: question }
-          ],
-          temperature: 0.3
-        })
-      }
-    );
+    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${OPENAI_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: question }
+        ],
+        temperature: 0.3,
+        max_tokens: 700
+      })
+    });
 
     const data = await aiResponse.json();
 
     if (!aiResponse.ok) {
-      console.log("OPENAI ERROR:", data);
-      return res.status(500).send("שגיאה ב-OpenAI");
+      console.log("OPENAI_ERROR:", data);
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(aiResponse.status).send(
+        "שגיאה בחיבור ל־OpenAI: " + JSON.stringify(data)
+      );
     }
 
     let answer =
@@ -137,45 +173,48 @@ export default async function handler(req, res) {
 
     answer = cleanAnswer(answer);
 
-    // =============================
-    // 4. שמירה ל-Supabase
-    // =============================
     if (SUPABASE_URL && SUPABASE_KEY) {
       try {
-        const save = await fetch(
-          `${SUPABASE_URL}/rest/v1/question_logs`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              apikey: SUPABASE_KEY,
-              Authorization: `Bearer ${SUPABASE_KEY}`
-            },
-            body: JSON.stringify({
-              username,
-              course,
-              question_text: question,
-              answer
-            })
-          }
-        );
+        const logResponse = await fetch(`${SUPABASE_URL}/rest/v1/question_logs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            Prefer: "return=minimal"
+          },
+          body: JSON.stringify({
+            username: username || "unknown",
+            course: course || "unknown",
+            question_text: question,
+            answer: answer
+          })
+        });
 
-        console.log("SUPABASE STATUS:", save.status);
+        console.log("SUPABASE_STATUS:", logResponse.status);
+
+        if (!logResponse.ok) {
+          const logError = await logResponse.text();
+          console.log("SUPABASE_LOG_ERROR:", logError);
+        } else {
+          console.log("SUPABASE_LOG_SAVED");
+        }
       } catch (e) {
-        console.log("SUPABASE ERROR:", e.message);
+        console.log("SUPABASE_LOG_EXCEPTION:", e.message);
       }
     } else {
-      console.log("SUPABASE NOT CONFIGURED");
+      console.log("SUPABASE_NOT_CONFIGURED:", {
+        hasUrl: !!SUPABASE_URL,
+        hasKey: !!SUPABASE_KEY
+      });
     }
 
-    // =============================
-    // 5. החזרת תשובה
-    // =============================
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     return res.status(200).send(answer);
 
   } catch (error) {
-    console.log("SERVER ERROR:", error);
-    return res.status(500).send("שגיאת שרת");
+    console.log("SERVER_ERROR:", error);
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.status(500).send("שגיאת שרת: " + error.message);
   }
 }
