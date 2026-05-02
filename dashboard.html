@@ -2,211 +2,195 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>חילוץ שאלות נקיות</title>
+  <title>Go Yeda - AI Question Dashboard</title>
+
   <style>
     body {
-      font-family: Arial, "Noto Sans Hebrew", sans-serif;
-      background: #f5f7fa;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
       margin: 0;
-      padding: 24px;
-      color: #1f2937;
-    }
-
-    .container {
-      max-width: 1100px;
-      margin: 0 auto;
-      background: #ffffff;
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
-    }
-
-    h1 {
-      margin-top: 0;
-      font-size: 28px;
-      color: #111827;
-    }
-
-    .note {
-      background: #eef6ff;
-      border-right: 5px solid #2563eb;
-      padding: 14px 16px;
-      margin-bottom: 20px;
-      border-radius: 8px;
-      line-height: 1.6;
-    }
-
-    textarea {
-      width: 100%;
-      min-height: 220px;
-      padding: 14px;
-      font-size: 16px;
-      line-height: 1.6;
-      border: 1px solid #cbd5e1;
-      border-radius: 10px;
-      resize: vertical;
-      box-sizing: border-box;
+      padding: 30px;
       direction: rtl;
     }
 
-    button {
-      margin-top: 14px;
-      padding: 12px 22px;
-      font-size: 16px;
-      border: none;
-      border-radius: 10px;
-      background: #2563eb;
-      color: white;
-      cursor: pointer;
-      font-weight: bold;
+    h1 {
+      color: #1f3f78;
+      margin-bottom: 5px;
     }
 
-    button:hover {
-      background: #1d4ed8;
+    .small {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 25px;
+    }
+
+    .card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 25px;
+      max-width: 260px;
+    }
+
+    .number {
+      font-size: 34px;
+      font-weight: bold;
+      color: #1f3f78;
+      margin-top: 8px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 24px;
       background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     }
 
     th, td {
-      border: 1px solid #d1d5db;
       padding: 12px;
+      border-bottom: 1px solid #eee;
       text-align: right;
       vertical-align: top;
-      line-height: 1.6;
     }
 
     th {
-      background: #f3f4f6;
-      color: #111827;
-    }
-
-    .empty {
-      color: #991b1b;
+      background: #1f3f78;
+      color: white;
       font-weight: bold;
-      margin-top: 18px;
     }
 
-    .small {
-      font-size: 14px;
-      color: #4b5563;
-      margin-top: 8px;
+    tr:hover {
+      background: #f9fbff;
+    }
+
+    .question {
+      max-width: 700px;
+      line-height: 1.5;
+      font-weight: 500;
+    }
+
+    .loading {
+      color: #666;
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+    }
+
+    .error {
+      color: #b00020;
+      background: #fff0f0;
+      padding: 15px;
+      border-radius: 10px;
+      margin-bottom: 20px;
     }
   </style>
 </head>
 
 <body>
-  <div class="container">
-    <h1>חילוץ שאלה נקייה לטבלה</h1>
+  <h1>לוח בקרה לשאלות AI - Go Yeda</h1>
+  <p class="small">רשימת שאלות שנשאלו על ידי חניכים</p>
 
-    <div class="note">
-      המטרה: להציג בטבלה רק את נוסח השאלה שבה החניך התקשה.
-      המערכת מתעלמת מהנחיות לפני המילה <strong>“שאלה:”</strong>,
-      ומוחקת אפשרויות תשובה, הסברים ותוספות.
-    </div>
-
-    <label for="inputText"><strong>הדבק כאן את הטקסט המלא:</strong></label>
-    <textarea id="inputText">ענה בעברית כמדריך תאוריה תעופתית מקצועי. הסבר את השאלה הבאה לחניך טיס פרטי. אל תסתפק בתשובה קצרה. הסבר את העיקרון התעופתי, את דרך החשיבה, ולמה תשובות אחרות אינן מתאימות אם ניתן להסיק זאת מהנתונים.
-
-שאלה: על גבי מפה בעלת קנ״מ של 1:250000 מדדת נתיב שאורכו 26 ס״מ, מהו אורך הנתיב במציאות:
-אפשרויות תשובה:
-1. מרחק של 65 מייל ימי
-2. מרחק של 65 מייל יבשתי
-3. מרחק של 65 ק״מ
-4. אין תשובה נכונה</textarea>
-
-    <br />
-    <button onclick="extractQuestion()">חלץ שאלה לטבלה</button>
-
-    <div id="message"></div>
-
-    <table id="resultTable" style="display:none;">
-      <thead>
-        <tr>
-          <th>מס׳</th>
-          <th>שאלה</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody"></tbody>
-    </table>
-
-    <div class="small">
-      כלל החילוץ: מתחיל ב־“שאלה:” ועוצר לפני “אפשרויות תשובה:”, “אפשרויות:”, “תשובות:” או תחילת רשימה ממוספרת.
-    </div>
+  <div class="card">
+    <div>סה״כ שאלות</div>
+    <div id="total" class="number">...</div>
   </div>
 
+  <div id="error"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>שם משתמש</th>
+        <th>תאריך</th>
+        <th>שם הקורס</th>
+        <th>השאלה</th>
+      </tr>
+    </thead>
+    <tbody id="questionsTable">
+      <tr>
+        <td colspan="4" class="loading">טוען נתונים...</td>
+      </tr>
+    </tbody>
+  </table>
+
   <script>
-    function cleanQuestion(rawText) {
-      if (!rawText) return "";
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
 
-      const startIndex = rawText.indexOf("שאלה:");
-      if (startIndex === -1) return "";
+    // ✨ פונקציה שמוציאה רק את השאלה (ללא תשובות)
+    function extractQuestion(text) {
+      if (!text) return "";
 
-      let questionText = rawText.substring(startIndex);
-
-      const stopPatterns = [
-        /אפשרויות\s*תשובה\s*:/,
-        /אפשרויות\s*:/,
-        /תשובות\s*:/,
-        /\n\s*1[\.\)]\s+/,
-        /\n\s*א[\.\)]\s+/
+      const markers = [
+        "אפשרויות תשובה",
+        "אפשרויות:",
+        "1.",
+        "א.",
+        "א)",
+        "A.",
+        "A)"
       ];
 
-      let stopIndex = questionText.length;
-
-      stopPatterns.forEach(pattern => {
-        const match = questionText.match(pattern);
-        if (match && match.index < stopIndex) {
-          stopIndex = match.index;
+      for (let marker of markers) {
+        const index = text.indexOf(marker);
+        if (index > 0) {
+          return text.substring(0, index).trim();
         }
-      });
-
-      questionText = questionText.substring(0, stopIndex);
-
-      return questionText
-        .replace(/\s+/g, " ")
-        .replace(/\s+:/g, ":")
-        .trim();
-    }
-
-    function extractQuestion() {
-      const input = document.getElementById("inputText").value;
-      const question = cleanQuestion(input);
-      const table = document.getElementById("resultTable");
-      const body = document.getElementById("tableBody");
-      const message = document.getElementById("message");
-
-      body.innerHTML = "";
-      message.innerHTML = "";
-
-      if (!question) {
-        table.style.display = "none";
-        message.innerHTML = '<div class="empty">לא נמצאה מילה “שאלה:” בטקסט.</div>';
-        return;
       }
 
-      const row = document.createElement("tr");
-
-      const numberCell = document.createElement("td");
-      numberCell.textContent = "1";
-
-      const questionCell = document.createElement("td");
-      questionCell.textContent = question;
-
-      row.appendChild(numberCell);
-      row.appendChild(questionCell);
-      body.appendChild(row);
-
-      table.style.display = "table";
+      return text.trim();
     }
 
-    window.onload = extractQuestion;
+    async function loadStats() {
+      try {
+        const response = await fetch("/api/stats");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "שגיאה בטעינת הנתונים");
+        }
+
+        document.getElementById("total").innerText = data.totalQuestions || 0;
+
+        const rows = data.rows || [];
+
+        if (rows.length === 0) {
+          document.getElementById("questionsTable").innerHTML = `
+            <tr>
+              <td colspan="4">אין עדיין נתונים להצגה</td>
+            </tr>
+          `;
+          return;
+        }
+
+        document.getElementById("questionsTable").innerHTML =
+          rows.map(item => `
+            <tr>
+              <td>${escapeHtml(item.username)}</td>
+              <td>${escapeHtml(item.date)}</td>
+              <td>${escapeHtml(item.course)}</td>
+              <td class="question">${escapeHtml(extractQuestion(item.question))}</td>
+            </tr>
+          `).join("");
+
+      } catch (error) {
+        document.getElementById("error").innerHTML =
+          `<div class="error">שגיאה: ${escapeHtml(error.message)}</div>`;
+
+        document.getElementById("questionsTable").innerHTML = "";
+      }
+    }
+
+    loadStats();
   </script>
 </body>
 </html>
-
