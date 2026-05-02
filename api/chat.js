@@ -8,13 +8,49 @@ function decodeHtml(text) {
     .replace(/&gt;/g, ">");
 }
 
+function cleanAnswer(text) {
+  if (!text) return "";
+
+  return String(text)
+    // Remove Markdown symbols
+    .replace(/[*#`]/g, "")
+    .replace(/-{3,}/g, "")
+
+    // Clean common LaTeX wrappers
+    .replace(/\\\(/g, "")
+    .replace(/\\\)/g, "")
+    .replace(/\\\[/g, "")
+    .replace(/\\\]/g, "")
+    .replace(/\$\$/g, "")
+
+    // Convert common LaTeX commands to readable text
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "$1 / $2")
+    .replace(/\\sqrt\{([^{}]+)\}/g, "sqrt($1)")
+    .replace(/\\cdot/g, " x ")
+    .replace(/\\times/g, " x ")
+    .replace(/\\rho/g, "rho")
+    .replace(/\\Delta/g, "Delta")
+    .replace(/\\theta/g, "theta")
+    .replace(/\\alpha/g, "alpha")
+    .replace(/\\beta/g, "beta")
+    .replace(/\\gamma/g, "gamma")
+
+    // Normalize spacing
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export default async function handler(req, res) {
   try {
     let body = {};
 
+    // Moodle plugin may send GET query parameters
     if (req.method === "GET") {
       body = req.query || {};
-    } else if (req.method === "POST") {
+    }
+
+    // Also support POST, if used later
+    else if (req.method === "POST") {
       if (typeof req.body === "string") {
         try {
           body = JSON.parse(req.body);
@@ -26,6 +62,7 @@ export default async function handler(req, res) {
       }
     }
 
+    // Extract question from several possible Moodle/plugin field names
     const rawQuestion =
       body.question ||
       body.q ||
@@ -42,6 +79,24 @@ export default async function handler(req, res) {
 
     const question = decodeHtml(rawQuestion);
 
+    // Extract username/course for logging
+    const username = decodeHtml(
+      body.username ||
+      body.user ||
+      body.userid ||
+      body["amp;username"] ||
+      "unknown"
+    );
+
+    const course = decodeHtml(
+      body.course ||
+      body.course_name ||
+      body.coursename ||
+      body["amp;course"] ||
+      "unknown"
+    );
+
+    // Extract prompt
     const rawPrompt =
       body.prompt ||
       body.systemprompt ||
@@ -51,12 +106,17 @@ export default async function handler(req, res) {
 
     const systemPrompt =
       decodeHtml(rawPrompt) ||
-      `אתה מדריך תאוריה תעופתית מקצועי.
-ענה בעברית ברורה, מדויקת ומקצועית.
-אם זו שאלת מבחן – הסבר את ההיגיון ולא רק את התשובה.
-אל תציג JSON.
-אל תציג את השאלה כפי שקיבלת אותה.
-תן תשובה ישירה וברורה לחניך.`;
+      `You are a professional aviation theory instructor.
+Answer clearly, accurately, and professionally in Hebrew.
+If this is a quiz question, explain the reasoning and not only the answer.
+If you are not certain about the answer, state it explicitly.
+Do not guess aviation-related data.
+Prefer principles based on established aviation literature, such as Oxford or FAA.
+Do not use Markdown formatting.
+Do not use asterisks, hash symbols, or code blocks.
+Do not use LaTeX formatting.
+Write formulas in simple readable plain text only.
+Return only the final answer to the student.`;
 
     if (!question || question.trim().length < 3) {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -68,7 +128,8 @@ export default async function handler(req, res) {
       return res.status(500).send("שגיאת שרת: OPENAI_API_KEY לא מוגדר ב־Vercel.");
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Ask OpenAI
+    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -80,45 +141,55 @@ export default async function handler(req, res) {
           { role: "system", content: systemPrompt },
           { role: "user", content: question }
         ],
-        temperature: 0.3
+        temperature: 0.3,
+        max_tokens: 700
       })
     });
 
-    const data = await response.json();
+    const data = await openaiResponse.json();
 
-    if (!response.ok) {
+    if (!openaiResponse.ok) {
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      return res.status(response.status).send("שגיאה בחיבור ל־OpenAI.");
+      return res.status(openaiResponse.status).send(
+        "שגיאה בחיבור ל־OpenAI: " + JSON.stringify(data)
+      );
     }
 
     let answer =
-    data?.choices?.[0]?.message?.content ||
-    "לא התקבלה תשובה מהמודל.";
+      data?.choices?.[0]?.message?.content ||
+      "לא התקבלה תשובה מהמודל.";
 
-    // Remove markdown symbols
-    answer = answer
-      .replace(/[*#`]/g, "")       // remove *, #, `
-      .replace(/-{3,}/g, "")       // remove ---
-      .replace(/\n{3,}/g, "\n\n")  // normalize spacing
-      .trim();
-    
+    answer = cleanAnswer(answer);
+
+    // Save log to Supabase, but do not fail the student response if logging fails
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const logResponse = await fetch(`${process.env.SUPABASE_URL}/rest/v1/question_logs`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+            "Prefer": "return=minimal"
+          },
+          body: JSON.stringify({
+            username: username || "unknown",
+            course: course || "unknown",
+            question_text: question,
+            answer: answer
+          })
+        });
+
+        if (!logResponse.ok) {
+          const logError = await logResponse.text();
+          console.log("SUPABASE_LOG_ERROR:", logError);
+        }
+      } catch (logError) {
+        console.log("SUPABASE_LOG_EXCEPTION:", logError.message);
+      }
+    }
+
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-
-    await fetch(`${process.env.SUPABASE_URL}/rest/v1/question_logs`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY,
-        "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`
-      },
-      body: JSON.stringify({
-        username: username || "unknown",
-        course: course || "unknown",
-        question_text: question,
-        answer: answer
-      })
-    });
-    
     return res.status(200).send(answer);
 
   } catch (error) {
