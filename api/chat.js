@@ -12,30 +12,19 @@ function cleanAnswer(text) {
   if (!text) return "";
 
   return String(text)
-    // Remove Markdown symbols
     .replace(/[*#`]/g, "")
     .replace(/-{3,}/g, "")
-
-    // Clean common LaTeX wrappers
     .replace(/\\\(/g, "")
     .replace(/\\\)/g, "")
     .replace(/\\\[/g, "")
     .replace(/\\\]/g, "")
     .replace(/\$\$/g, "")
-
-    // Convert common LaTeX commands to readable text
     .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "$1 / $2")
     .replace(/\\sqrt\{([^{}]+)\}/g, "sqrt($1)")
     .replace(/\\cdot/g, " x ")
     .replace(/\\times/g, " x ")
     .replace(/\\rho/g, "rho")
     .replace(/\\Delta/g, "Delta")
-    .replace(/\\theta/g, "theta")
-    .replace(/\\alpha/g, "alpha")
-    .replace(/\\beta/g, "beta")
-    .replace(/\\gamma/g, "gamma")
-
-    // Normalize spacing
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -44,13 +33,9 @@ export default async function handler(req, res) {
   try {
     let body = {};
 
-    // Moodle plugin may send GET query parameters
     if (req.method === "GET") {
       body = req.query || {};
-    }
-
-    // Also support POST, if used later
-    else if (req.method === "POST") {
+    } else if (req.method === "POST") {
       if (typeof req.body === "string") {
         try {
           body = JSON.parse(req.body);
@@ -62,8 +47,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // Extract question from several possible Moodle/plugin field names
-    const rawQuestion =
+    const question = decodeHtml(
       body.question ||
       body.q ||
       body["amp;q"] ||
@@ -75,11 +59,9 @@ export default async function handler(req, res) {
       body.quizQuestion ||
       body.quiz_question ||
       body.content ||
-      "";
+      ""
+    );
 
-    const question = decodeHtml(rawQuestion);
-
-    // Extract username/course for logging
     const username = decodeHtml(
       body.username ||
       body.user ||
@@ -96,25 +78,24 @@ export default async function handler(req, res) {
       "unknown"
     );
 
-    // Extract prompt
-    const rawPrompt =
+    const promptFromMoodle = decodeHtml(
       body.prompt ||
       body.systemprompt ||
       body.system_prompt ||
       body["amp;prompt"] ||
-      "";
+      ""
+    );
 
     const systemPrompt =
-      decodeHtml(rawPrompt) ||
+      promptFromMoodle ||
       `You are a professional aviation theory instructor.
-Answer clearly, accurately, and professionally in Hebrew.
+Answer clearly and professionally in Hebrew.
 If this is a quiz question, explain the reasoning and not only the answer.
 If you are not certain about the answer, state it explicitly.
 Do not guess aviation-related data.
-Prefer principles based on established aviation literature, such as Oxford or FAA.
-Do not use Markdown formatting.
-Do not use asterisks, hash symbols, or code blocks.
-Do not use LaTeX formatting.
+Prefer principles based on established aviation literature such as Oxford or FAA.
+Do not use Markdown.
+Do not use asterisks, hash symbols, code blocks, or LaTeX.
 Write formulas in simple readable plain text only.
 Return only the final answer to the student.`;
 
@@ -128,7 +109,13 @@ Return only the final answer to the student.`;
       return res.status(500).send("שגיאת שרת: OPENAI_API_KEY לא מוגדר ב־Vercel.");
     }
 
-    // Ask OpenAI
+    console.log("QUESTION_LOG_INPUT", {
+      time: new Date().toISOString(),
+      username,
+      course,
+      question
+    });
+
     const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -161,36 +148,43 @@ Return only the final answer to the student.`;
 
     answer = cleanAnswer(answer);
 
-    // Save log to Supabase, but do not fail the student response if logging fails
+    console.log("SUPABASE_ENV", {
+      hasUrl: Boolean(process.env.SUPABASE_URL),
+      hasKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      url: process.env.SUPABASE_URL || "missing"
+    });
+
     if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
-        console.log("SUPABASE_ENV", {
-        hasUrl: !!process.env.SUPABASE_URL,
-        hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        url: process.env.SUPABASE_URL
-        });
-        const logResponse = await fetch(`${process.env.SUPABASE_URL}/rest/v1/question_logs`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY,
-            "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-            "Prefer": "return=minimal"
-          },
-          body: JSON.stringify({
-            username: username || "unknown",
-            course: course || "unknown",
-            question_text: question,
-            answer: answer
-          })
-        });
+        const logResponse = await fetch(
+          `${process.env.SUPABASE_URL}/rest/v1/question_logs`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": process.env.SUPABASE_SERVICE_ROLE_KEY,
+              "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+              "Prefer": "return=minimal"
+            },
+            body: JSON.stringify({
+              username: username || "unknown",
+              course: course || "unknown",
+              question_text: question,
+              answer: answer
+            })
+          }
+        );
+
         console.log("SUPABASE_STATUS", logResponse.status);
+
         if (!logResponse.ok) {
           const logError = await logResponse.text();
-          console.log("SUPABASE_LOG_ERROR:", logError);
+          console.log("SUPABASE_LOG_ERROR", logError);
+        } else {
+          console.log("SUPABASE_LOG_SAVED");
         }
       } catch (logError) {
-        console.log("SUPABASE_LOG_EXCEPTION:", logError.message);
+        console.log("SUPABASE_LOG_EXCEPTION", logError.message);
       }
     }
 
