@@ -164,6 +164,11 @@ Return only the final answer to the student.`;
     // Save log to Supabase, but do not fail the student response if logging fails
     if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
+        console.log("SUPABASE_ENV", {
+        hasUrl: !!process.env.SUPABASE_URL,
+        hasKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        url: process.env.SUPABASE_URL
+        });
         const logResponse = await fetch(`${process.env.SUPABASE_URL}/rest/v1/question_logs`, {
           method: "POST",
           headers: {
@@ -179,7 +184,7 @@ Return only the final answer to the student.`;
             answer: answer
           })
         });
-
+        console.log("SUPABASE_STATUS", logResponse.status);
         if (!logResponse.ok) {
           const logError = await logResponse.text();
           console.log("SUPABASE_LOG_ERROR:", logError);
