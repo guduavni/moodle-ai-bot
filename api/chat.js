@@ -91,10 +91,17 @@ export default async function handler(req, res) {
       return res.status(response.status).send("שגיאה בחיבור ל־OpenAI.");
     }
 
-    const answer =
-      data?.choices?.[0]?.message?.content ||
-      "לא התקבלה תשובה מהמודל.";
+    let answer =
+    data?.choices?.[0]?.message?.content ||
+    "לא התקבלה תשובה מהמודל.";
 
+    // Remove markdown symbols
+    answer = answer
+      .replace(/[*#`]/g, "")       // remove *, #, `
+      .replace(/-{3,}/g, "")       // remove ---
+      .replace(/\n{3,}/g, "\n\n")  // normalize spacing
+      .trim();
+    
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     return res.status(200).send(answer);
 
