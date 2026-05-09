@@ -29,9 +29,10 @@
   <div class="scenario">
     <label for="scenario-picker">תרחיש:</label>
     <select id="scenario-picker">
-      <option value="success">success — happy path</option>
-      <option value="slow-3s">slow-3s — 3s delay</option>
-      <option value="401">401 — auth rejected</option>
+      <option value="success">success — canned local answer</option>
+      <option value="live">live — proxy to real skytutor (production)</option>
+      <option value="slow-3s">slow-3s — 3s delay (canned)</option>
+      <option value="401">401 — auth rejected (canned)</option>
       <option value="network-error">network-error — socket dropped</option>
       <option value="dynamic-question">dynamic-question — append a 4th .que after click</option>
     </select>
@@ -148,8 +149,11 @@
         ajaxurl: "/ajax",
         sesskey: "fake-sesskey-abc123",
         buttontext: "❓ הסבר לי את השאלה",
-        courseid: 42,
-        coursename: "מבוא לתאוריה תעופתית",
+        courseid: 16,
+        // Course name must match a real enrollment when scenario=live; the
+        // canned scenarios ignore it. "ידע טכני כללי" is one of admin's
+        // active courses on the staging Moodle.
+        coursename: "ידע טכני כללי",
         rtl: true
       });
 

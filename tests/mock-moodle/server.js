@@ -23,6 +23,11 @@ const QB_JS = path.join(
 
 const PORT = Number(process.env.PORT || 3030);
 
+// Live skytutor proxy config — only used when scenario=live.
+const SKYTUTOR_API_URL = process.env.SKYTUTOR_API_URL || "https://skytutor-agent.vercel.app/api/moodle/chat/";
+const SKYTUTOR_USERNAME = process.env.SKYTUTOR_USERNAME || "admin";
+const SKYTUTOR_COURSE_OVERRIDE = process.env.SKYTUTOR_COURSE || "";
+
 const INITIAL_ANSWER =
   "הזדקרות היא תופעה אווירודינמית שמתרחשת כאשר זווית התקיפה עוברת את הזווית הקריטית — בכל תנאי טיסה, כולל טיסה ישרה ואופקית. המהירות אינה הגורם הישיר.\n\n" +
   "ברגע שזווית התקיפה חורגת מעבר לערך הקריטי, זרימת האוויר על פני הכנף מאבדת את ההצמדה (separation), מקדם העילוי צונח באופן חד וכוח העילוי קורס.\n\n" +
@@ -42,6 +47,119 @@ function buildFollowupAnswer(message, turn) {
     "במצב אמיתי, skytutor משתמש בהיסטוריית הסשן " + SESSION_ID + " כדי להמשיך את ההסבר ברצף.\n" +
     "(תשובה לדוגמה — נשלחה מהשרת המקומי.)"
   );
+}
+
+/**
+ * Mirror the prompt-building behavior of QBot/questionbot/ajax.php for the
+ * `live` scenario, so a real skytutor call sees the same upstream payload it
+ * would see in production.
+ */
+function buildUpstreamQuestion(parsed) {
+  const kind = parsed && parsed.kind ? String(parsed.kind) : "initial";
+
+  if (kind === "followup") {
+    return String((parsed && parsed.message) || "").trim();
+  }
+
+  const questiontext = String((parsed && parsed.questiontext) || "").trim();
+  const answersList = (parsed && Array.isArray(parsed.answers)) ? parsed.answers : [];
+
+  let q = "ענה בעברית כמדריך תאוריה תעופתית מקצועי.\n\n";
+  q += "הסבר את השאלה הבאה לחניך טיס פרטי.\n";
+  q += "אל תסתפק בתשובה קצרה. הסבר את העיקרון התעופתי, את דרך החשיבה, ולמה תשובות אחרות אינן מתאימות אם ניתן להסיק זאת מהנתונים.\n\n";
+  q += "שאלה:\n" + questiontext + "\n\n";
+
+  if (answersList.length > 0) {
+    let answerstext = "";
+    answersList.forEach((a, i) => {
+      answerstext += (i + 1) + ". " + String(a).trim() + "\n";
+    });
+    q += "אפשרויות תשובה:\n" + answerstext;
+  }
+
+  return q;
+}
+
+async function proxyToSkytutor(parsed) {
+  const question = buildUpstreamQuestion(parsed);
+  if (!question) {
+    return { status: 400, body: { answer: "שאלה ריקה — לא נשלחה ל-skytutor." } };
+  }
+
+  const course =
+    SKYTUTOR_COURSE_OVERRIDE ||
+    String((parsed && parsed.coursename) || "").trim() ||
+    "ידע טכני כללי";
+
+  const payload = {
+    username: SKYTUTOR_USERNAME,
+    course,
+    question,
+  };
+
+  console.log("[live] → POST " + SKYTUTOR_API_URL);
+  console.log("[live]   username=" + payload.username + " course=\"" + course + "\"");
+  console.log("[live]   question (first 120): " + question.slice(0, 120).replace(/\n/g, " ") + (question.length > 120 ? "…" : ""));
+
+  let res;
+  try {
+    res = await fetch(SKYTUTOR_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.log("[live] ✗ network error: " + err.message);
+    return { status: 502, body: { answer: "שגיאת רשת אל skytutor: " + err.message } };
+  }
+
+  const text = await res.text();
+  console.log("[live] ← " + res.status + " (" + text.length + " bytes)");
+
+  let parsedRes = null;
+  try {
+    parsedRes = JSON.parse(text);
+  } catch {
+    parsedRes = null;
+  }
+
+  if (res.status === 401) {
+    return {
+      status: 200,
+      body: {
+        answer:
+          "skytutor החזיר 401 (לא מאומת).\n\n" +
+          "נשלח: username=\"" + payload.username + "\", course=\"" + course + "\".\n" +
+          "ודא שהמשתמש רשום לקורס במודל המוגדר ב-MOODLE_URL של skytutor."
+      },
+    };
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    return {
+      status: 200,
+      body: {
+        answer:
+          "skytutor החזיר HTTP " + res.status + ".\n\n" +
+          "תשובת שרת:\n" + (parsedRes ? JSON.stringify(parsedRes, null, 2) : text.slice(0, 800)),
+      },
+    };
+  }
+
+  if (!parsedRes) {
+    return { status: 200, body: { answer: text || "(תגובה ריקה מ-skytutor)" } };
+  }
+
+  const answer =
+    parsedRes.answer ||
+    parsedRes.message ||
+    parsedRes.response ||
+    parsedRes.text ||
+    JSON.stringify(parsedRes);
+
+  const out = { answer };
+  if (parsedRes.sessionId) out.sessionId = String(parsedRes.sessionId);
+  return { status: 200, body: out };
 }
 
 function send(res, status, headers, body) {
@@ -104,6 +222,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (scenario === "live") {
+      const result = await proxyToSkytutor(parsed);
+      send(
+        res,
+        result.status,
+        { "Content-Type": "application/json; charset=utf-8" },
+        JSON.stringify(result.body)
+      );
+      return;
+    }
+
     const kind = parsed && parsed.kind ? String(parsed.kind) : "initial";
     let answer;
 
@@ -140,5 +269,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\nMock Moodle running at http://localhost:" + PORT);
   console.log("Open it in a browser, click ❓, then keep typing follow-ups.");
-  console.log("Switch the scenario picker to test slow / 401 / network-error / dynamic-question.");
+  console.log("Scenarios: success / slow-3s / 401 / network-error / dynamic-question / live (skytutor).");
+  console.log("Live mode → " + SKYTUTOR_API_URL);
+  console.log("           username=\"" + SKYTUTOR_USERNAME + "\"" +
+    (SKYTUTOR_COURSE_OVERRIDE ? " course=\"" + SKYTUTOR_COURSE_OVERRIDE + "\" (env override)" : " course=<from page coursename>"));
 });

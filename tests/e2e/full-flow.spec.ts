@@ -29,8 +29,8 @@ test.describe("Mock Moodle quiz — question bot end-to-end", () => {
     const body = JSON.parse(req.postData() || "{}");
     expect(body).toMatchObject({
       kind: "initial",
-      courseid: 42,
-      coursename: "מבוא לתאוריה תעופתית"
+      courseid: 16,
+      coursename: "ידע טכני כללי"
     });
     expect(body.questiontext).toContain("הזדקרות");
     expect(Array.isArray(body.answers)).toBe(true);
