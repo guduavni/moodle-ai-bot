@@ -1,6 +1,6 @@
 {
   "name": "moodle-ai-bot",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Go Yeda / SkyTutor — Hebrew aviation tutor: Moodle local plugin + Vercel serverless API.",
   "type": "module",
