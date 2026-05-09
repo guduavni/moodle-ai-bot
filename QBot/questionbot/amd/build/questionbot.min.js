@@ -151,6 +151,11 @@ define("local_questionbot/questionbot", [], function() {
             var sendBtn = null;
             var inFlight = false;
 
+            // Bumped on every closePanel(); turns capture this on dispatch and
+            // skip mutating shared state if the panel they belong to is gone.
+            // Prevents an orphaned fetch from re-enabling a fresh panel's input.
+            var generation = 0;
+
             function buildLoadingDots() {
                 var span = document.createElement("span");
                 for (var i = 0; i < 3; i++) {
@@ -205,6 +210,7 @@ define("local_questionbot/questionbot", [], function() {
                 input = null;
                 sendBtn = null;
                 inFlight = false;
+                generation += 1;
             }
 
             function buildPanel() {
@@ -313,6 +319,7 @@ define("local_questionbot/questionbot", [], function() {
 
             function sendTurn(payload, assistantBubble, onSettled) {
                 setInFlight(true);
+                var myGen = generation;
 
                 var body = {
                     kind: payload.kind,
@@ -339,18 +346,28 @@ define("local_questionbot/questionbot", [], function() {
                         return r.json();
                     })
                     .then(function(data) {
+                        // setBubbleText guards via bubble.isConnected, so a
+                        // stale bubble (panel was closed) is a no-op here.
                         setBubbleText(assistantBubble, data.answer || noAnswerText);
                     })
                     .catch(function(e) {
                         setBubbleText(assistantBubble, errorPrefix + e.message, true);
                     })
                     .then(function() {
-                        setInFlight(false);
-                        if (input) {
-                            try {
-                                input.focus();
-                            } catch (err) { /* jsdom focus can throw, ignore */ }
+                        // If the panel was closed (and possibly replaced) while
+                        // this fetch was in flight, do not mutate the new panel's
+                        // input/sendBtn — that would prematurely re-enable an
+                        // unrelated turn.
+                        if (myGen === generation) {
+                            setInFlight(false);
+                            if (input) {
+                                try {
+                                    input.focus();
+                                } catch (err) { /* jsdom focus can throw, ignore */ }
+                            }
                         }
+                        // The inject button is owned by the .que, not the panel,
+                        // so always re-enable it regardless of the generation.
                         if (onSettled) {
                             onSettled();
                         }

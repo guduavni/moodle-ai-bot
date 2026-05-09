@@ -209,4 +209,84 @@ describe("multi-turn chat — follow-up turns", () => {
     expect(ctx.sendBtn().disabled).toBe(false);
     expect(ctx.input().disabled).toBe(false);
   });
+
+  it("orphaned fetch from a closed panel does not re-enable a fresh panel's input", async () => {
+    // Two .que blocks → two inject buttons with independent `data-qbLoading`
+    // flags. Otherwise re-clicking the same inject button is blocked by the
+    // qbLoading guard, which side-steps the race we want to test.
+    document.body.innerHTML = `
+      <div class="que">
+        <div class="qtext">Q1?</div>
+        <div class="answer">
+          <div class="r0"><input type="radio" id="q1a"><label for="q1a">alpha</label></div>
+        </div>
+      </div>
+      <div class="que">
+        <div class="qtext">Q2?</div>
+        <div class="answer">
+          <div class="r0"><input type="radio" id="q2a"><label for="q2a">beta</label></div>
+        </div>
+      </div>
+    `;
+
+    let resolve1, resolve2;
+    let callCount = 0;
+    globalThis.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) return new Promise((r) => { resolve1 = r; });
+      return new Promise((r) => { resolve2 = r; });
+    });
+
+    QB.init(defaultConfig());
+
+    const buttons = document.querySelectorAll(".questionbot-btn");
+
+    // Open chat for Q1; fetch #1 hangs.
+    buttons[0].click();
+    await tick(0);
+    expect(document.getElementById("qb-input").disabled).toBe(true);
+
+    // Close the Q1 panel before fetch #1 resolves.
+    document.getElementById("qb-close").click();
+    expect(document.getElementById("qb-answer-box")).toBeNull();
+
+    // Open chat for Q2; fetch #2 now hangs. The Q1 fetch is orphaned.
+    buttons[1].click();
+    await tick(0);
+    expect(document.getElementById("qb-answer-box")).not.toBeNull();
+    expect(document.getElementById("qb-input").disabled).toBe(true);
+    expect(document.getElementById("qb-send").disabled).toBe(true);
+
+    // Resolve the orphaned fetch #1. Without the generation guard this would
+    // call setInFlight(false) on the *new* panel and prematurely enable input.
+    resolve1({ json: async () => ({ answer: "stale" }) });
+    await tick(0);
+    await tick(0);
+
+    expect(document.getElementById("qb-input").disabled).toBe(true);
+    expect(document.getElementById("qb-send").disabled).toBe(true);
+
+    // The stale answer must not appear in the new panel's thread; the
+    // assistant bubble there is still the loading placeholder.
+    let assistants = document.querySelectorAll("#qb-thread .qb-bubble-assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelectorAll(".qb-loading-dot").length).toBe(3);
+
+    // Resolving the current fetch then proceeds normally.
+    resolve2({ json: async () => ({ answer: "fresh" }) });
+    await tick(0);
+    await tick(0);
+
+    expect(document.getElementById("qb-input").disabled).toBe(false);
+    expect(document.getElementById("qb-send").disabled).toBe(false);
+    assistants = document.querySelectorAll("#qb-thread .qb-bubble-assistant");
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].innerText || assistants[0].textContent).toBe("fresh");
+
+    // The orphaned Q1 inject button must still re-enable — its onSettled
+    // callback runs regardless of generation, since the button is bound to
+    // the .que, not the panel.
+    expect(buttons[0].disabled).toBe(false);
+    expect(buttons[0].dataset.qbLoading).toBe("0");
+  });
 });

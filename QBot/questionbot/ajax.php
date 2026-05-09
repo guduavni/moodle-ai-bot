@@ -34,7 +34,7 @@ try {
     }
 
     if ($coursename === 'unknown_course' && !empty($input['coursename'])) {
-        $coursename = trim((string)$input['coursename']);
+        $coursename = format_string(trim((string)$input['coursename']));
     }
 
     $username = $USER->username;
