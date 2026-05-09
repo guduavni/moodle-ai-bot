@@ -14,7 +14,7 @@ test.describe("Mock Moodle quiz — question bot end-to-end", () => {
     expect(buttonCount).toBeGreaterThanOrEqual(3);
   });
 
-  test("happy path: click → POST to /ajax → answer panel renders Hebrew text", async ({ page }) => {
+  test("happy path: click → POST kind=initial → answer renders in an assistant bubble", async ({ page }) => {
     await page.selectOption("#scenario-picker", "success");
 
     const requestPromise = page.waitForRequest((req) =>
@@ -28,8 +28,9 @@ test.describe("Mock Moodle quiz — question bot end-to-end", () => {
 
     const body = JSON.parse(req.postData() || "{}");
     expect(body).toMatchObject({
-      courseid: 42,
-      coursename: "מבוא לתאוריה תעופתית"
+      kind: "initial",
+      courseid: 16,
+      coursename: "ידע טכני כללי"
     });
     expect(body.questiontext).toContain("הזדקרות");
     expect(Array.isArray(body.answers)).toBe(true);
@@ -41,30 +42,91 @@ test.describe("Mock Moodle quiz — question bot end-to-end", () => {
 
     const panel = page.locator("#qb-answer-box");
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText("הזדקרות");
+    await expect(panel.locator(".qb-bubble-assistant")).toContainText("הזדקרות");
+
+    // Seeded user bubble shows the original question + numbered options.
+    await expect(panel.locator(".qb-bubble-user").first()).toContainText("הזדקרות");
   });
 
-  test("error rendering: scenario=401 produces a Hebrew error in the panel", async ({ page }) => {
+  test("follow-up turn: typing a question + שלח sends kind=followup and adds a second assistant bubble", async ({ page }) => {
+    await page.selectOption("#scenario-picker", "success");
+    await page.locator(".questionbot-btn").first().click();
+
+    // Wait for the initial assistant bubble to settle.
+    await expect(page.locator("#qb-answer-box .qb-bubble-assistant").first()).toContainText("הזדקרות");
+
+    const followupRequest = page.waitForRequest((req) =>
+      req.url().includes("/ajax") && req.method() === "POST"
+    );
+
+    await page.locator("#qb-input").fill("תוכל להסביר את עיקרון ברנולי?");
+    await page.locator("#qb-send").click();
+
+    const req = await followupRequest;
+    const body = JSON.parse(req.postData() || "{}");
+    expect(body).toMatchObject({
+      kind: "followup",
+      message: "תוכל להסביר את עיקרון ברנולי?"
+    });
+    // Followups must NOT carry the structured initial-turn fields.
+    expect(body.questiontext).toBeUndefined();
+    expect(body.answers).toBeUndefined();
+
+    // Two assistant bubbles in the thread, in order.
+    const assistantBubbles = page.locator("#qb-answer-box .qb-bubble-assistant");
+    await expect(assistantBubbles).toHaveCount(2);
+    await expect(assistantBubbles.nth(1)).toContainText("תור #");
+  });
+
+  test("send-button debounce: clicking שלח twice while a follow-up is pending fires only one request", async ({ page }) => {
+    await page.selectOption("#scenario-picker", "success");
+    await page.locator(".questionbot-btn").first().click();
+    await expect(page.locator("#qb-answer-box .qb-bubble-assistant").first()).toContainText("הזדקרות");
+
+    // Switch to slow-3s so the followup hangs long enough to retry the click.
+    await page.selectOption("#scenario-picker", "slow-3s");
+
+    let followupCalls = 0;
+    page.on("request", (r) => {
+      if (r.url().includes("/ajax") && r.method() === "POST") followupCalls++;
+    });
+
+    await page.locator("#qb-input").fill("שאלה נוספת");
+    const sendBtn = page.locator("#qb-send");
+    await sendBtn.click();
+    await sendBtn.click({ force: true }).catch(() => {});
+    await sendBtn.click({ force: true }).catch(() => {});
+
+    await page.waitForTimeout(500);
+    expect(followupCalls).toBe(1);
+
+    // Cleanup: wait for the slow response so the test exits cleanly.
+    await page.waitForResponse((r) => r.url().includes("/ajax"));
+  });
+
+  test("error rendering: scenario=401 produces a Hebrew error in an assistant bubble", async ({ page }) => {
     await page.selectOption("#scenario-picker", "401");
     await page.locator(".questionbot-btn").first().click();
 
     const panel = page.locator("#qb-answer-box");
     await expect(panel).toBeVisible();
     // The plugin reads `data.answer` from the JSON body; the mock returns
-    // { answer: "הבוט דחה את הבקשה (401)." } even on 401.
-    await expect(panel).toContainText("דחה את הבקשה");
+    // { answer: "הבוט דחה את הבקשה (401)." } even on 401, so it lands in the
+    // assistant bubble (this exercises the proxy's resilient JSON parsing path,
+    // not the .catch network-error path).
+    await expect(panel.locator(".qb-bubble-assistant")).toContainText("דחה את הבקשה");
   });
 
-  test("network error: scenario=network-error renders 'שגיאה: ...' in the panel", async ({ page }) => {
+  test("network error: scenario=network-error renders 'שגיאה: ...' in an error bubble", async ({ page }) => {
     await page.selectOption("#scenario-picker", "network-error");
     await page.locator(".questionbot-btn").first().click();
 
     const panel = page.locator("#qb-answer-box");
     await expect(panel).toBeVisible();
-    await expect(panel).toContainText(/שגיאה/);
+    await expect(panel.locator(".qb-bubble-error")).toContainText(/שגיאה/);
   });
 
-  test("debounce: rapid double-click fires only one network request", async ({ page }) => {
+  test("inject-button debounce: rapid double-click on ❓ fires only one initial request", async ({ page }) => {
     await page.selectOption("#scenario-picker", "slow-3s");
 
     let calls = 0;
@@ -74,10 +136,9 @@ test.describe("Mock Moodle quiz — question bot end-to-end", () => {
 
     const btn = page.locator(".questionbot-btn").first();
     await btn.click();
-    await btn.click({ force: true }).catch(() => {}); // disabled state may reject; ignore
+    await btn.click({ force: true }).catch(() => {});
     await btn.click({ force: true }).catch(() => {});
 
-    // Wait long enough to be sure no second request goes out.
     await page.waitForTimeout(500);
     expect(calls).toBe(1);
 

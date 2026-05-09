@@ -2,10 +2,17 @@ define("local_questionbot/questionbot", [], function() {
     return {
         init: function(config) {
 
-            console.log("QB CLEAN MODE v3");
+            console.log("QB CHAT MODE v1");
 
             var ajaxurl = config.ajaxurl;
             var sesskey = config.sesskey;
+            var modalTitle = config.modaltitle || "שיחה עם SkyTutor";
+            var sendButtonText = config.sendbuttontext || "שלח";
+            var inputPlaceholder = config.inputplaceholder || "כתוב שאלה המשך...";
+            var noAnswerText = config.noanswertext || "לא התקבלה תשובה.";
+            var errorPrefix = config.errorprefix || "שגיאה: ";
+
+            // ----- Text scraping helpers (unchanged behavior) -----
 
             function cleanText(text) {
                 return (text || "")
@@ -18,22 +25,6 @@ define("local_questionbot/questionbot", [], function() {
                     .replace(/Select one:/gi, "")
                     .replace(/איפוס הבחירה שלי/g, "")
                     .trim();
-            }
-
-            function ensureStyles() {
-                if (document.getElementById("qb-loading-style")) {
-                    return;
-                }
-
-                var style = document.createElement("style");
-                style.id = "qb-loading-style";
-                style.type = "text/css";
-                style.textContent = "@keyframes qb-wave {0%{transform:translateY(0);} 30%{transform:translateY(-3px);} 60%{transform:translateY(0);} 100%{transform:translateY(0);}}" +
-                    ".qb-loading-dot{display:inline-block;width:4px;height:4px;border-radius:50%;background:#0f6cbf;margin:0 1px;animation:qb-wave 1s infinite ease-in-out;}" +
-                    ".qb-loading-dot:nth-child(2){animation-delay:0.15s;}" +
-                    ".qb-loading-dot:nth-child(3){animation-delay:0.3s;}";
-
-                document.head.appendChild(style);
             }
 
             function getQuestion(q) {
@@ -124,54 +115,266 @@ define("local_questionbot/questionbot", [], function() {
                 return answers;
             }
 
-            function showAnswer(text) {
-                var old = document.getElementById("qb-answer-box");
-                if (old) {
-                    old.remove();
+            // ----- Styles -----
+
+            function ensureStyles() {
+                if (document.getElementById("qb-loading-style")) {
+                    return;
                 }
 
-                var box = document.createElement("div");
-                box.id = "qb-answer-box";
-                box.dir = "rtl";
-                box.style.position = "fixed";
-                box.style.top = "90px";
-                box.style.left = "50%";
-                box.style.transform = "translateX(-50%)";
-                box.style.width = "70%";
-                box.style.maxWidth = "850px";
-                box.style.maxHeight = "70vh";
-                box.style.overflow = "auto";
-                box.style.background = "#fff";
-                box.style.border = "1px solid #ccc";
-                box.style.borderRadius = "10px";
-                box.style.boxShadow = "0 8px 30px rgba(0,0,0,.25)";
-                box.style.zIndex = "99999";
-                box.style.padding = "18px";
-                box.style.lineHeight = "1.7";
-                box.style.whiteSpace = "pre-wrap";
+                var style = document.createElement("style");
+                style.id = "qb-loading-style";
+                style.type = "text/css";
+                style.textContent =
+                    "@keyframes qb-wave {0%{transform:translateY(0);} 30%{transform:translateY(-3px);} 60%{transform:translateY(0);} 100%{transform:translateY(0);}}" +
+                    ".qb-loading-dot{display:inline-block;width:4px;height:4px;border-radius:50%;background:#0f6cbf;margin:0 1px;animation:qb-wave 1s infinite ease-in-out;}" +
+                    ".qb-loading-dot:nth-child(2){animation-delay:0.15s;}" +
+                    ".qb-loading-dot:nth-child(3){animation-delay:0.3s;}" +
+                    "#qb-thread{display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1;min-height:0;padding:4px 4px 4px 0;}" +
+                    ".qb-bubble{padding:10px 14px;border-radius:10px;line-height:1.6;white-space:pre-wrap;max-width:88%;word-wrap:break-word;}" +
+                    ".qb-bubble-user{align-self:flex-start;background:#e8f1fa;border:1px solid #cfe1f3;}" +
+                    ".qb-bubble-assistant{align-self:flex-end;background:#f7f7f7;border:1px solid #e5e5e5;}" +
+                    ".qb-bubble-error{align-self:flex-end;background:#fff1f0;border:1px solid #ffccc7;color:#a8071a;}" +
+                    "#qb-input-row{display:flex;gap:8px;margin-top:12px;align-items:flex-end;}" +
+                    "#qb-input{flex:1;min-height:42px;max-height:120px;padding:8px 10px;border:1px solid #ccc;border-radius:8px;font:inherit;resize:vertical;direction:rtl;}" +
+                    "#qb-send{background:#0f6cbf;color:#fff;border:none;padding:0 16px;height:42px;border-radius:8px;cursor:pointer;}" +
+                    "#qb-send:disabled,#qb-input:disabled{opacity:.5;cursor:not-allowed;}";
 
-                box.innerHTML =
-                    '<button id="qb-close" style="float:left;border:none;background:#0f6cbf;color:white;padding:6px 12px;border-radius:6px;cursor:pointer">סגור</button>' +
-                    '<h3 style="margin-top:0">הסבר מהבוט</h3>' +
-                    '<div></div>';
-
-                box.querySelector("div").innerText = text;
-                document.body.appendChild(box);
-
-                document.getElementById("qb-close").onclick = function() {
-                    box.remove();
-                };
+                document.head.appendChild(style);
             }
 
-            function send(q, button, loader) {
-                var question = getQuestion(q);
-                var answers = getAnswers(q);
+            // ----- Chat panel state (closure-scoped, one panel at a time) -----
 
-                console.log("QUESTION CLEAN:", question);
-                console.log("ANSWERS CLEAN:", answers);
-                console.log("COURSE ID:", config.courseid);
-                console.log("COURSE NAME:", config.coursename);
+            var panel = null;
+            var thread = null;
+            var input = null;
+            var sendBtn = null;
+            var inFlight = false;
 
+            // Bumped on every closePanel(); turns capture this on dispatch and
+            // skip mutating shared state if the panel they belong to is gone.
+            // Prevents an orphaned fetch from re-enabling a fresh panel's input.
+            var generation = 0;
+
+            function buildLoadingDots() {
+                var span = document.createElement("span");
+                for (var i = 0; i < 3; i++) {
+                    var d = document.createElement("span");
+                    d.className = "qb-loading-dot";
+                    span.appendChild(d);
+                }
+                return span;
+            }
+
+            function appendBubble(role, text) {
+                if (!thread) {
+                    return null;
+                }
+
+                var bubble = document.createElement("div");
+                bubble.className = "qb-bubble qb-bubble-" + role;
+
+                if (text === null || text === undefined) {
+                    bubble.appendChild(buildLoadingDots());
+                } else {
+                    bubble.innerText = text;
+                }
+
+                thread.appendChild(bubble);
+                thread.scrollTop = thread.scrollHeight;
+                return bubble;
+            }
+
+            function setBubbleText(bubble, text, isError) {
+                if (!bubble || !bubble.isConnected) {
+                    return;
+                }
+
+                bubble.innerText = text;
+
+                if (isError) {
+                    bubble.className = "qb-bubble qb-bubble-error";
+                }
+
+                if (thread) {
+                    thread.scrollTop = thread.scrollHeight;
+                }
+            }
+
+            function closePanel() {
+                if (panel) {
+                    panel.remove();
+                }
+                panel = null;
+                thread = null;
+                input = null;
+                sendBtn = null;
+                inFlight = false;
+                generation += 1;
+            }
+
+            function buildPanel() {
+                closePanel();
+
+                panel = document.createElement("div");
+                panel.id = "qb-answer-box";
+                panel.dir = "rtl";
+                panel.style.position = "fixed";
+                panel.style.top = "90px";
+                panel.style.left = "50%";
+                panel.style.transform = "translateX(-50%)";
+                panel.style.width = "70%";
+                panel.style.maxWidth = "850px";
+                panel.style.maxHeight = "70vh";
+                panel.style.display = "flex";
+                panel.style.flexDirection = "column";
+                panel.style.background = "#fff";
+                panel.style.border = "1px solid #ccc";
+                panel.style.borderRadius = "10px";
+                panel.style.boxShadow = "0 8px 30px rgba(0,0,0,.25)";
+                panel.style.zIndex = "99999";
+                panel.style.padding = "18px";
+                panel.style.lineHeight = "1.7";
+
+                var header = document.createElement("div");
+                header.style.display = "flex";
+                header.style.justifyContent = "space-between";
+                header.style.alignItems = "center";
+                header.style.marginBottom = "10px";
+
+                var title = document.createElement("h3");
+                title.style.margin = "0";
+                title.innerText = modalTitle;
+
+                var close = document.createElement("button");
+                close.id = "qb-close";
+                close.type = "button";
+                close.innerText = "סגור";
+                close.style.cssText = "border:none;background:#0f6cbf;color:white;padding:6px 12px;border-radius:6px;cursor:pointer";
+                close.onclick = closePanel;
+
+                header.appendChild(title);
+                header.appendChild(close);
+
+                thread = document.createElement("div");
+                thread.id = "qb-thread";
+
+                var inputRow = document.createElement("div");
+                inputRow.id = "qb-input-row";
+
+                input = document.createElement("textarea");
+                input.id = "qb-input";
+                input.rows = 1;
+                input.placeholder = inputPlaceholder;
+                input.addEventListener("keydown", function(e) {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onSendClick();
+                    }
+                });
+
+                sendBtn = document.createElement("button");
+                sendBtn.id = "qb-send";
+                sendBtn.type = "button";
+                sendBtn.innerText = sendButtonText;
+                sendBtn.onclick = onSendClick;
+
+                inputRow.appendChild(input);
+                inputRow.appendChild(sendBtn);
+
+                panel.appendChild(header);
+                panel.appendChild(thread);
+                panel.appendChild(inputRow);
+
+                document.body.appendChild(panel);
+            }
+
+            function setInFlight(state) {
+                inFlight = state;
+                if (sendBtn) {
+                    sendBtn.disabled = state;
+                }
+                if (input) {
+                    input.disabled = state;
+                }
+            }
+
+            function onSendClick() {
+                if (inFlight || !input) {
+                    return;
+                }
+
+                var text = (input.value || "").trim();
+                if (!text) {
+                    return;
+                }
+
+                input.value = "";
+
+                appendBubble("user", text);
+                var assistant = appendBubble("assistant", null);
+
+                sendTurn({ kind: "followup", message: text }, assistant, null);
+            }
+
+            function sendTurn(payload, assistantBubble, onSettled) {
+                setInFlight(true);
+                var myGen = generation;
+
+                var body = {
+                    kind: payload.kind,
+                    courseid: config.courseid || 0,
+                    coursename: config.coursename || ""
+                };
+
+                if (payload.kind === "initial") {
+                    body.questiontext = payload.questiontext || "";
+                    body.answers = payload.answers || [];
+                } else {
+                    body.message = payload.message || "";
+                }
+
+                fetch(ajaxurl + "?sesskey=" + encodeURIComponent(sesskey), {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(body)
+                })
+                    .then(function(r) {
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        // setBubbleText guards via bubble.isConnected, so a
+                        // stale bubble (panel was closed) is a no-op here.
+                        setBubbleText(assistantBubble, data.answer || noAnswerText);
+                    })
+                    .catch(function(e) {
+                        setBubbleText(assistantBubble, errorPrefix + e.message, true);
+                    })
+                    .then(function() {
+                        // If the panel was closed (and possibly replaced) while
+                        // this fetch was in flight, do not mutate the new panel's
+                        // input/sendBtn — that would prematurely re-enable an
+                        // unrelated turn.
+                        if (myGen === generation) {
+                            setInFlight(false);
+                            if (input) {
+                                try {
+                                    input.focus();
+                                } catch (err) { /* jsdom focus can throw, ignore */ }
+                            }
+                        }
+                        // The inject button is owned by the .que, not the panel,
+                        // so always re-enable it regardless of the generation.
+                        if (onSettled) {
+                            onSettled();
+                        }
+                    });
+            }
+
+            function openChat(q, button) {
                 if (button && button.dataset.qbLoading === "1") {
                     return;
                 }
@@ -181,45 +384,41 @@ define("local_questionbot/questionbot", [], function() {
                     button.disabled = true;
                 }
 
-                if (loader) {
-                    loader.style.visibility = "visible";
-                }
-
-                function done() {
+                function releaseButton() {
                     if (button) {
                         button.dataset.qbLoading = "0";
                         button.disabled = false;
                     }
-                    if (loader) {
-                        loader.style.visibility = "hidden";
-                    }
                 }
 
-                fetch(ajaxurl + "?sesskey=" + encodeURIComponent(sesskey), {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify({
+                var question = getQuestion(q);
+                var answers = getAnswers(q);
+
+                console.log("QUESTION CLEAN:", question);
+                console.log("ANSWERS CLEAN:", answers);
+
+                buildPanel();
+
+                var seedText = question;
+                if (answers.length) {
+                    var lines = answers.map(function(a, i) {
+                        return (i + 1) + ". " + a;
+                    });
+                    seedText = question + "\n\n" + lines.join("\n");
+                }
+
+                appendBubble("user", seedText);
+                var assistant = appendBubble("assistant", null);
+
+                sendTurn(
+                    {
+                        kind: "initial",
                         questiontext: question,
-                        answers: answers,
-                        courseid: config.courseid || 0,
-                        coursename: config.coursename || ""
-                    })
-                })
-                .then(function(r) {
-                    return r.json();
-                })
-                .then(function(data) {
-                    showAnswer(data.answer || "לא התקבלה תשובה");
-                })
-                .catch(function(e) {
-                    showAnswer("שגיאה: " + e.message);
-                })
-                .then(function() {
-                    done();
-                });
+                        answers: answers
+                    },
+                    assistant,
+                    releaseButton
+                );
             }
 
             function inject() {
@@ -252,26 +451,13 @@ define("local_questionbot/questionbot", [], function() {
                     b.style.borderRadius = "6px";
                     b.style.cursor = "pointer";
 
-                    var loader = document.createElement("span");
-                    loader.style.display = "inline-flex";
-                    loader.style.alignItems = "center";
-                    loader.style.marginLeft = "8px";
-                    loader.style.visibility = "hidden";
-
-                    for (var i = 0; i < 3; i++) {
-                        var dot = document.createElement("span");
-                        dot.className = "qb-loading-dot";
-                        loader.appendChild(dot);
-                    }
-
                     b.onclick = function(e) {
                         e.preventDefault();
                         e.stopPropagation();
-                        send(q, b, loader);
+                        openChat(q, b);
                     };
 
                     wrapper.appendChild(b);
-                    wrapper.appendChild(loader);
                     qt.appendChild(wrapper);
                     q.setAttribute("data-qb", "1");
                 });
