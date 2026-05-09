@@ -1,6 +1,6 @@
 {
   "name": "moodle-ai-bot",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Go Yeda / SkyTutor — Hebrew aviation tutor: Moodle local plugin + Vercel serverless API.",
   "type": "module",
@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "mock:moodle": "node tests/mock-moodle/server.js"
+    "mock:moodle": "node tests/mock-moodle/server.js",
+    "dev:chat": "node tests/dev/run-chat-locally.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

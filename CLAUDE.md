@@ -19,21 +19,22 @@ Two halves in one repo, no monorepo tooling:
   - `settings.php` + `lang/{en,he}/local_questionbot.php` — admin settings + translations.
   - `local_questionbot.zip` — packaged plugin for Moodle install.
 
-- `api/` — Vercel serverless functions, **orphaned from the popup flow**.
-  - `stats.js` — reads Supabase `question_logs` for the dashboard, returns `{ totalQuestions, rows }`. Still wired up to the root `dashboard.html`.
+- `api/` — Vercel serverless functions deployed at `moodle-ai-bot.vercel.app`.
+  - `chat.js` — **backwards-compat proxy** for `https://moodle-ai-bot.vercel.app/api/chat`. Existing Moodle plugin installs have that URL saved in their `apiurl` setting (in `mdl_config_plugins`); we cannot rewrite stored values from this repo, so the URL must keep responding. The handler accepts both legacy GET (`?username=&course=&q=`) and new POST (`{question, username, course}`) shapes, then forwards as POST to skytutor's `/api/moodle/chat/` and returns `{answer, sessionId}`. No OpenAI, no Supabase — pure shape-translating proxy. See issue #5.
+  - `stats.js` — reads Supabase `question_logs` for the dashboard, returns `{ totalQuestions, rows }`. The previous writer was the old `chat.js`; the new proxy doesn't log, so `question_logs` won't grow further unless re-wired through skytutor.
   - `dashboard.html` — older/stale dashboard (expects `topQuestions/courses/topUsers/latest` shapes that `stats.js` no longer returns). Don't edit unless you also update `stats.js` to match.
 
 - `dashboard.html` (root) — the **active** Hebrew/RTL dashboard. Reads `/api/stats`. Recent work has been here.
 
-The legacy `api/chat.js` (direct-OpenAI Vercel function) was removed in #2 once the popup migrated fully to skytutor-agent.
-
 ## External dependencies
 
-- **skytutor-agent** — separate project at `/Users/oradeldar/projects/skytutor-agent`, deployed to `https://skytutor-agent.vercel.app`. The popup talks to its `/api/moodle/chat` POST endpoint, which expects `{ question, username, course }` and returns `{ answer, sessionId }`. Multi-turn continuity is automatic (the endpoint scopes a session per Moodle user per day). System prompt + RAG live in that project, not here.
-- **Production API URL** — `https://skytutor-agent.vercel.app/api/moodle/chat/` (hardcoded as fallback in `QBot/questionbot/ajax.php` if the plugin's `apiurl` setting is empty).
+- **skytutor-agent** — separate project at `/Users/oradeldar/projects/skytutor-agent`, deployed to `https://skytutor-agent.vercel.app`. Both `ajax.php` (new installs) and `api/chat.js` (legacy installs via the proxy) target its `/api/moodle/chat` POST endpoint, which expects `{ question, username, course }` and returns `{ answer, sessionId }`. Multi-turn continuity is automatic (the endpoint scopes a session per Moodle user per day). System prompt + RAG live in that project, not here.
+- **Production URLs**
+  - `https://skytutor-agent.vercel.app/api/moodle/chat/` — primary upstream. Hardcoded as the fallback in `ajax.php` when `apiurl` is empty, and as the default forwarding target in `api/chat.js`.
+  - `https://moodle-ai-bot.vercel.app/api/chat` — legacy entry point, still live as a proxy. Existing plugin installs whose `apiurl` is stored as this URL keep working without admin intervention. Override the proxy's upstream via the `SKYTUTOR_API_URL` env var.
 - **Supabase** (still used by the dashboard only) — table `question_logs`. Env vars `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (code also accepts the typo'd `SUPBASE_*` and a few other aliases — leave the fallbacks alone unless cleaning up env config).
 
-A root `package.json` exists for **dev tooling only** (`vitest`, `jsdom`, `@playwright/test`). Vercel ignores `devDependencies` for serverless functions — the `/api` deploy is unaffected. No `vercel.json`. No CI yet.
+A root `package.json` exists for **dev tooling only** (`vitest`, `jsdom`, `@playwright/test`). Vercel ignores `devDependencies` for serverless functions — the `/api` deploy is unaffected. A `vercel.json` ignores deploys when only plugin/test/docs files change (see [vercel.json](vercel.json)).
 
 ## Tests
 
@@ -44,8 +45,9 @@ All test code lives under `tests/` and is **non-invasive** — production source
    - `inject.dom.test.js` — button injection per `.que`, `data-qb` guard, `MutationObserver` re-injection.
    - `send.dom.test.js` — initial-turn request shape (`kind: "initial"`), assistant-bubble rendering, fallback / error bubble paths, inject-button debounce, close button.
    - `chat.dom.test.js` — multi-turn behavior: שלח/Enter sends `kind: "followup"`; Shift+Enter newlines; thread accumulates bubbles in order; send-button debounce while a follow-up is in flight; empty/whitespace input is a no-op; error during a follow-up renders an error bubble without locking the input.
-2. **Browser-visible mock Moodle** — `tests/mock-moodle/{index.html,server.js}`. A static page that mimics a real quiz attempt (three `.que` blocks, all three labelling patterns) + a tiny no-deps Node server that stands in for `ajax.php`. The mock server understands `kind=initial|followup`, returns a stable `sessionId`, and produces a distinct follow-up reply per turn. Scenario picker: `success` / `slow-3s` / `401` / `network-error` / `dynamic-question`.
-3. **Playwright E2E** — `tests/e2e/full-flow.spec.ts`. Drives the mock page above; asserts injection, initial-turn request shape, follow-up turn (kind=followup, distinct second assistant bubble), error rendering, send-button debounce, inject-button debounce, MutationObserver.
+2. **API integration (vitest)** — `tests/integration/chat-handler.test.js`. Drives the `api/chat.js` default-export handler with a stubbed `globalThis.fetch`. Covers GET-vs-POST dispatch, param-name aliases (`q`/`question`/`questionText`/`message`/`amp;q`), missing-question 400, skytutor 401 + non-2xx + network errors all reshaped to Hebrew `{answer}` for the legacy plugin, sessionId pass-through, and alternate upstream answer keys (`answer`/`message`/`response`/`text`).
+3. **Browser-visible mock Moodle** — `tests/mock-moodle/{index.html,server.js}`. A static page that mimics a real quiz attempt (three `.que` blocks, all three labelling patterns) + a tiny no-deps Node server that stands in for `ajax.php`. The mock server understands `kind=initial|followup`, returns a stable `sessionId`, and produces a distinct follow-up reply per turn. Scenario picker: `success` / `slow-3s` / `401` / `network-error` / `dynamic-question` / `live` (proxies straight to production skytutor).
+4. **Playwright E2E** — `tests/e2e/full-flow.spec.ts`. Drives the mock page above; asserts injection, initial-turn request shape, follow-up turn (kind=followup, distinct second assistant bubble), error rendering, send-button debounce, inject-button debounce, MutationObserver.
 
 ## Conventions to honor
 
@@ -54,6 +56,7 @@ All test code lives under `tests/` and is **non-invasive** — production source
 - **Aviation domain.** Answers should explain reasoning (not just the final choice) and prefer principles from Oxford/FAA literature. Don't fabricate aviation data.
 - **Two dashboards exist.** Root `dashboard.html` is canonical. `api/dashboard.html` is stale — flag before editing.
 - **The popup is the only intended caller of `ajax.php`.** Don't widen the request shape with aliases — if a new caller needs to use `ajax.php`, add an explicit branch.
+- **`api/chat.js` is param-tolerant on purpose.** Multiple legacy callers send the question under different keys (`q`, `questionText`, `quiz_question`, even `amp;q` when ampersands are double-encoded). Don't tighten the alias list without checking every Moodle install whose stored `apiurl` points here.
 - **Server-side session continuity.** Don't try to manage `sessionId` from the JS side; skytutor-agent derives it from `username` + the current date. The JS only needs to keep sending `kind=followup` turns to the same proxy.
 
 ## Things to watch
