@@ -23,8 +23,13 @@ const QB_JS = path.join(
 
 const PORT = Number(process.env.PORT || 3030);
 
-// Live skytutor proxy config — only used when scenario=live.
+// Upstream URLs for the live scenarios.
+//   `live`        → straight to skytutor (bypasses api/chat.js).
+//   `live-proxy`  → goes through the deployed `api/chat` proxy on
+//                   moodle-ai-bot.vercel.app, which then forwards to
+//                   skytutor. Use this to validate the proxy itself.
 const SKYTUTOR_API_URL = process.env.SKYTUTOR_API_URL || "https://skytutor-agent.vercel.app/api/moodle/chat/";
+const PROXY_API_URL = process.env.MOODLE_AI_BOT_PROXY_URL || "https://moodle-ai-bot.vercel.app/api/chat";
 const SKYTUTOR_USERNAME = process.env.SKYTUTOR_USERNAME || "admin";
 const SKYTUTOR_COURSE_OVERRIDE = process.env.SKYTUTOR_COURSE || "";
 
@@ -80,10 +85,10 @@ function buildUpstreamQuestion(parsed) {
   return q;
 }
 
-async function proxyToSkytutor(parsed) {
+async function proxyToUpstream(parsed, upstreamUrl, label) {
   const question = buildUpstreamQuestion(parsed);
   if (!question) {
-    return { status: 400, body: { answer: "שאלה ריקה — לא נשלחה ל-skytutor." } };
+    return { status: 400, body: { answer: "שאלה ריקה — לא נשלחה ל-" + label + "." } };
   }
 
   const course =
@@ -97,24 +102,25 @@ async function proxyToSkytutor(parsed) {
     question,
   };
 
-  console.log("[live] → POST " + SKYTUTOR_API_URL);
-  console.log("[live]   username=" + payload.username + " course=\"" + course + "\"");
-  console.log("[live]   question (first 120): " + question.slice(0, 120).replace(/\n/g, " ") + (question.length > 120 ? "…" : ""));
+  const tag = "[" + label + "]";
+  console.log(tag + " → POST " + upstreamUrl);
+  console.log(tag + "   username=" + payload.username + " course=\"" + course + "\"");
+  console.log(tag + "   question (first 120): " + question.slice(0, 120).replace(/\n/g, " ") + (question.length > 120 ? "…" : ""));
 
   let res;
   try {
-    res = await fetch(SKYTUTOR_API_URL, {
+    res = await fetch(upstreamUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(payload),
     });
   } catch (err) {
-    console.log("[live] ✗ network error: " + err.message);
-    return { status: 502, body: { answer: "שגיאת רשת אל skytutor: " + err.message } };
+    console.log(tag + " ✗ network error: " + err.message);
+    return { status: 502, body: { answer: "שגיאת רשת אל " + label + ": " + err.message } };
   }
 
   const text = await res.text();
-  console.log("[live] ← " + res.status + " (" + text.length + " bytes)");
+  console.log(tag + " ← " + res.status + " (" + text.length + " bytes)");
 
   let parsedRes = null;
   try {
@@ -128,7 +134,7 @@ async function proxyToSkytutor(parsed) {
       status: 200,
       body: {
         answer:
-          "skytutor החזיר 401 (לא מאומת).\n\n" +
+          label + " החזיר 401 (לא מאומת).\n\n" +
           "נשלח: username=\"" + payload.username + "\", course=\"" + course + "\".\n" +
           "ודא שהמשתמש רשום לקורס במודל המוגדר ב-MOODLE_URL של skytutor."
       },
@@ -140,14 +146,14 @@ async function proxyToSkytutor(parsed) {
       status: 200,
       body: {
         answer:
-          "skytutor החזיר HTTP " + res.status + ".\n\n" +
+          label + " החזיר HTTP " + res.status + ".\n\n" +
           "תשובת שרת:\n" + (parsedRes ? JSON.stringify(parsedRes, null, 2) : text.slice(0, 800)),
       },
     };
   }
 
   if (!parsedRes) {
-    return { status: 200, body: { answer: text || "(תגובה ריקה מ-skytutor)" } };
+    return { status: 200, body: { answer: text || "(תגובה ריקה מ-" + label + ")" } };
   }
 
   const answer =
@@ -223,7 +229,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (scenario === "live") {
-      const result = await proxyToSkytutor(parsed);
+      const result = await proxyToUpstream(parsed, SKYTUTOR_API_URL, "live");
+      send(
+        res,
+        result.status,
+        { "Content-Type": "application/json; charset=utf-8" },
+        JSON.stringify(result.body)
+      );
+      return;
+    }
+
+    if (scenario === "live-proxy") {
+      const result = await proxyToUpstream(parsed, PROXY_API_URL, "live-proxy");
       send(
         res,
         result.status,
@@ -269,8 +286,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\nMock Moodle running at http://localhost:" + PORT);
   console.log("Open it in a browser, click ❓, then keep typing follow-ups.");
-  console.log("Scenarios: success / slow-3s / 401 / network-error / dynamic-question / live (skytutor).");
-  console.log("Live mode → " + SKYTUTOR_API_URL);
-  console.log("           username=\"" + SKYTUTOR_USERNAME + "\"" +
+  console.log("Scenarios: success / slow-3s / 401 / network-error / dynamic-question / live (skytutor) / live-proxy (api/chat).");
+  console.log("Live mode       → " + SKYTUTOR_API_URL);
+  console.log("Live-proxy mode → " + PROXY_API_URL);
+  console.log("                  username=\"" + SKYTUTOR_USERNAME + "\"" +
     (SKYTUTOR_COURSE_OVERRIDE ? " course=\"" + SKYTUTOR_COURSE_OVERRIDE + "\" (env override)" : " course=<from page coursename>"));
 });
