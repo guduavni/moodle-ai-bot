@@ -20,8 +20,13 @@ function basicQue() {
   `;
 }
 
+function assistantText() {
+  const bubble = document.querySelector("#qb-answer-box .qb-bubble-assistant");
+  return bubble ? (bubble.innerText || bubble.textContent || "") : "";
+}
+
 describe("send() — request shape", () => {
-  it("POSTs JSON with sesskey in query string", async () => {
+  it("POSTs JSON with sesskey, kind=initial, and the scraped question/answers", async () => {
     basicQue();
     const fetchMock = vi.fn().mockResolvedValue({
       json: async () => ({ answer: "ok" })
@@ -30,8 +35,8 @@ describe("send() — request shape", () => {
 
     QB.init(defaultConfig({ ajaxurl: "/local/questionbot/ajax.php", sesskey: "abc123" }));
     document.querySelector(".questionbot-btn").click();
-    await Promise.resolve();
-    await Promise.resolve();
+    await tick(0);
+    await tick(0);
 
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe("/local/questionbot/ajax.php?sesskey=abc123");
@@ -41,14 +46,17 @@ describe("send() — request shape", () => {
 
     const sent = JSON.parse(opts.body);
     expect(sent).toMatchObject({
+      kind: "initial",
       questiontext: "Q?",
       answers: ["alpha"],
       courseid: 42,
       coursename: "Aviation Theory"
     });
+    // Initial turns must not carry a `message` field — that's followup-only.
+    expect(sent.message).toBeUndefined();
   });
 
-  it("renders data.answer text into #qb-answer-box", async () => {
+  it("renders data.answer text into the assistant bubble", async () => {
     basicQue();
     globalThis.fetch = vi.fn().mockResolvedValue({
       json: async () => ({ answer: "Hebrew answer text" })
@@ -59,10 +67,36 @@ describe("send() — request shape", () => {
     await tick(0);
     await tick(0);
 
-    const box = document.getElementById("qb-answer-box");
-    expect(box).not.toBeNull();
-    const inner = box.querySelector("div");
-    expect(inner.innerText || inner.textContent).toBe("Hebrew answer text");
+    expect(document.getElementById("qb-answer-box")).not.toBeNull();
+    expect(assistantText()).toBe("Hebrew answer text");
+  });
+
+  it("seeds a user bubble with the scraped question and numbered options", async () => {
+    basicQue();
+    let resolveFetch;
+    globalThis.fetch = vi.fn().mockImplementation(
+      () => new Promise((r) => { resolveFetch = r; })
+    );
+    QB.init(defaultConfig());
+
+    document.querySelector(".questionbot-btn").click();
+    await tick(0);
+
+    const userBubble = document.querySelector("#qb-answer-box .qb-bubble-user");
+    expect(userBubble).not.toBeNull();
+    const text = userBubble.innerText || userBubble.textContent;
+    expect(text).toContain("Q?");
+    expect(text).toContain("1. alpha");
+
+    // While the request is pending the assistant bubble shows the loading dots,
+    // not the answer text yet.
+    const assistant = document.querySelector("#qb-answer-box .qb-bubble-assistant");
+    expect(assistant).not.toBeNull();
+    expect(assistant.querySelectorAll(".qb-loading-dot").length).toBe(3);
+
+    resolveFetch({ json: async () => ({ answer: "done" }) });
+    await tick(0);
+    await tick(0);
   });
 
   it("falls back to 'לא התקבלה תשובה' when data.answer missing", async () => {
@@ -74,11 +108,10 @@ describe("send() — request shape", () => {
     await tick(0);
     await tick(0);
 
-    const inner = document.getElementById("qb-answer-box").querySelector("div");
-    expect(inner.innerText || inner.textContent).toMatch(/לא התקבלה תשובה/);
+    expect(assistantText()).toMatch(/לא התקבלה תשובה/);
   });
 
-  it("renders 'שגיאה: ...' when fetch rejects", async () => {
+  it("renders 'שגיאה: ...' in an error bubble when fetch rejects", async () => {
     basicQue();
     globalThis.fetch = vi.fn().mockRejectedValue(new Error("network down"));
     QB.init(defaultConfig());
@@ -87,11 +120,13 @@ describe("send() — request shape", () => {
     await tick(0);
     await tick(0);
 
-    const inner = document.getElementById("qb-answer-box").querySelector("div");
-    expect(inner.innerText || inner.textContent).toMatch(/שגיאה.*network down/);
+    const errBubble = document.querySelector("#qb-answer-box .qb-bubble-error");
+    expect(errBubble).not.toBeNull();
+    const text = errBubble.innerText || errBubble.textContent;
+    expect(text).toMatch(/שגיאה.*network down/);
   });
 
-  it("debounces double-clicks while a request is in-flight", async () => {
+  it("debounces inject-button double-clicks while the initial request is in-flight", async () => {
     basicQue();
     let resolveFetch;
     const fetchMock = vi.fn().mockImplementation(
@@ -118,7 +153,7 @@ describe("send() — request shape", () => {
     expect(btn.disabled).toBe(false);
   });
 
-  it("close button removes the answer panel", async () => {
+  it("close button removes the chat panel", async () => {
     basicQue();
     globalThis.fetch = vi.fn().mockResolvedValue({
       json: async () => ({ answer: "ok" })

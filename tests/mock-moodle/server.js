@@ -23,11 +23,26 @@ const QB_JS = path.join(
 
 const PORT = Number(process.env.PORT || 3030);
 
-const CANNED_ANSWER =
+const INITIAL_ANSWER =
   "הזדקרות היא תופעה אווירודינמית שמתרחשת כאשר זווית התקיפה עוברת את הזווית הקריטית — בכל תנאי טיסה, כולל טיסה ישרה ואופקית. המהירות אינה הגורם הישיר.\n\n" +
   "ברגע שזווית התקיפה חורגת מעבר לערך הקריטי, זרימת האוויר על פני הכנף מאבדת את ההצמדה (separation), מקדם העילוי צונח באופן חד וכוח העילוי קורס.\n\n" +
   "מהירות ההזדקרות היא נגזרת של אותה זווית קריטית: ככל שהמטוס כבד יותר או נמצא בעומס G גדול יותר, נדרשת מהירות גבוהה יותר כדי לייצר עילוי השווה למשקל לפני שמגיעים לזווית התקיפה הקריטית. זו הסיבה ל-Accelerated Stall — בפנייה חדה ההזדקרות תתרחש במהירות גבוהה יותר ממהירות ההזדקרות הנקייה.\n\n" +
-  "(תשובה לדוגמה — נשלחה מהשרת המקומי, לא מ-OpenAI.)";
+  "(תשובה לדוגמה — נשלחה מהשרת המקומי, לא מ-skytutor.)";
+
+// Per-day session counter that mimics skytutor's `moodle-YYYY-MM-DD-{actor}`
+// scoping. Tests don't actually need persistence — they only need to see that
+// follow-up turns get a different reply, and that a sessionId is returned.
+const SESSION_ID = "moodle-mock-" + new Date().toISOString().split("T")[0];
+let turnCounter = 0;
+
+function buildFollowupAnswer(message, turn) {
+  return (
+    "תשובה להמשך השיחה (תור #" + turn + "):\n\n" +
+    "השאלה שנשאלה: \"" + message + "\".\n\n" +
+    "במצב אמיתי, skytutor משתמש בהיסטוריית הסשן " + SESSION_ID + " כדי להמשיך את ההסבר ברצף.\n" +
+    "(תשובה לדוגמה — נשלחה מהשרת המקומי.)"
+  );
+}
 
 function send(res, status, headers, body) {
   res.writeHead(status, headers);
@@ -89,12 +104,24 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const kind = parsed && parsed.kind ? String(parsed.kind) : "initial";
+    let answer;
+
+    if (kind === "followup") {
+      turnCounter += 1;
+      const message = (parsed && parsed.message) ? String(parsed.message) : "";
+      answer = buildFollowupAnswer(message, turnCounter + 1);
+    } else {
+      turnCounter = 1;
+      answer = INITIAL_ANSWER;
+    }
+
     const respond = () => {
       send(
         res,
         200,
         { "Content-Type": "application/json; charset=utf-8" },
-        JSON.stringify({ answer: CANNED_ANSWER })
+        JSON.stringify({ answer, sessionId: SESSION_ID })
       );
     };
 
@@ -112,5 +139,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\nMock Moodle running at http://localhost:" + PORT);
-  console.log("Open it in a browser, click ❓, switch the scenario picker.");
+  console.log("Open it in a browser, click ❓, then keep typing follow-ups.");
+  console.log("Switch the scenario picker to test slow / 401 / network-error / dynamic-question.");
 });
