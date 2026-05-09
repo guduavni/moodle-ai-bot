@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Mock Moodle Quiz — Question Bot demo</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Heebo", sans-serif; background: #f4f5f7; margin: 0; padding: 24px; color: #222; }
+  .page { max-width: 900px; margin: 0 auto; }
+  header.fake-moodle { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  header.fake-moodle h1 { margin: 0; font-size: 18px; color: #0f6cbf; }
+  header.fake-moodle .scenario { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  header.fake-moodle select { padding: 4px 8px; }
+  .que { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+  .que .info { color: #888; font-size: 12px; margin-bottom: 4px; }
+  .qtext { font-size: 16px; line-height: 1.6; margin-bottom: 12px; }
+  .answer { padding-right: 8px; }
+  .answer > div { padding: 6px 0; display: flex; align-items: center; gap: 8px; }
+  .answer label { cursor: pointer; }
+  .answer input { margin-left: 6px; }
+  .scenario-note { font-size: 12px; color: #555; background: #fffbe6; border: 1px solid #ffe58f; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
+  #qb-log { font: 11px ui-monospace, "SF Mono", Menlo, monospace; background: #111; color: #eee; padding: 12px; border-radius: 6px; max-height: 180px; overflow: auto; white-space: pre-wrap; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="fake-moodle">
+  <h1>Mock Moodle Quiz · תאוריה תעופתית</h1>
+  <div class="scenario">
+    <label for="scenario-picker">תרחיש:</label>
+    <select id="scenario-picker">
+      <option value="success">success — happy path</option>
+      <option value="slow-3s">slow-3s — 3s delay</option>
+      <option value="401">401 — auth rejected</option>
+      <option value="network-error">network-error — socket dropped</option>
+      <option value="dynamic-question">dynamic-question — append a 4th .que after click</option>
+    </select>
+  </div>
+</header>
+
+<div class="scenario-note">
+  זהו עמוד דמה למערכת Moodle. קוד ה-AMD נטען ישירות מתוך <code>QBot/questionbot/amd/src/questionbot.js</code>.
+  השרת המקומי בפורט 3030 מחקה את ajax.php ומחזיר תשובות מוכנות מראש בהתאם לתרחיש שנבחר.
+</div>
+
+<!-- Q1: standard <input id> + <label for> pattern -->
+<div class="que multichoice deferredfeedback notyetanswered">
+  <div class="info">שאלה 1</div>
+  <div class="qtext">
+    מה הגורם הישיר להזדקרות בטיסה ישרה ואופקית?
+  </div>
+  <div class="answer">
+    <div class="r0"><input type="radio" name="q1" id="q1_a"><label for="q1_a">a. חריגה מזווית התקיפה הקריטית</label></div>
+    <div class="r1"><input type="radio" name="q1" id="q1_b"><label for="q1_b">b. ירידה במהירות מתחת ל-Vs</label></div>
+    <div class="r2"><input type="radio" name="q1" id="q1_c"><label for="q1_c">c. הגדלת עומס G במהלך פנייה</label></div>
+    <div class="r3"><input type="radio" name="q1" id="q1_d"><label for="q1_d">d. עלייה בצפיפות האוויר</label></div>
+  </div>
+</div>
+
+<!-- Q2: input wrapped inside its <label> (forces the parentLabel fallback) -->
+<div class="que multichoice">
+  <div class="info">שאלה 2 — תבנית: input בתוך label</div>
+  <div class="qtext">
+    בטיסה ישרה ואופקית במהירות קבועה, מה קורה לזווית התקיפה ככל שמשקל המטוס גדל?
+  </div>
+  <div class="answer">
+    <div class="r0"><label><input type="radio" name="q2"> זווית התקיפה גדלה</label></div>
+    <div class="r1"><label><input type="radio" name="q2"> זווית התקיפה קטנה</label></div>
+    <div class="r2"><label><input type="radio" name="q2"> זווית התקיפה אינה משתנה</label></div>
+    <div class="r3"><label><input type="radio" name="q2"> תלוי בכיוון הרוח בלבד</label></div>
+  </div>
+</div>
+
+<!-- Q3: input alone in .r0/.r1 row, no <label> at all (forces row-clone fallback).
+     Also includes one >180 char distractor to exercise the answer-length filter. -->
+<div class="que multichoice">
+  <div class="info">שאלה 3 — תבנית: ללא label, נופל ל־row clone</div>
+  <div class="qtext">
+    מה ההשפעה העיקרית של פתיחת מדפים בשלב הגישה לנחיתה?
+  </div>
+  <div class="answer">
+    <div class="r0"><input type="radio" name="q3"> הגדלת מקדם העילוי לצד תוספת גרר אווירודינמי</div>
+    <div class="r1"><input type="radio" name="q3"> הקטנת זווית התקיפה הקריטית בלבד, ללא שינוי בעילוי</div>
+    <div class="r2"><input type="radio" name="q3"> הגדלת מהירות ההזדקרות הנקייה ב-30 קשר, יצירת מומנט גלגול חזק שמחייב תיקון מתמיד במהלך הגישה ועלייה משמעותית בעומסים המבניים על מבנה הזנב והמטוס באופן כללי</div>
+  </div>
+</div>
+
+<div id="qb-log"></div>
+
+</div>
+
+<!-- AMD shim: capture the module that questionbot.js registers, then call init(). -->
+<script>
+  (function () {
+    var captured = null;
+    window.define = function (name, deps, factory) {
+      try { captured = factory(); } catch (e) { console.error("AMD factory threw:", e); }
+    };
+    window.define.amd = true;
+
+    window.__qbReady = new Promise(function (resolve) {
+      window.__qbResolve = resolve;
+    });
+
+    window.__qbInit = function () {
+      if (!captured || typeof captured.init !== "function") {
+        console.error("questionbot.js did not register a module via define()");
+        return;
+      }
+
+      var picker = document.getElementById("scenario-picker");
+
+      // The plugin reads ajaxurl once at init time, so wrap fetch to inject the
+      // current scenario on every call.
+      var origFetch = window.fetch.bind(window);
+      window.fetch = function (input, opts) {
+        if (typeof input === "string" && input.indexOf("/ajax") === 0) {
+          var u = new URL(input, window.location.origin);
+          u.searchParams.set("scenario", picker.value);
+          input = u.pathname + u.search;
+        }
+        return origFetch(input, opts);
+      };
+
+      var log = document.getElementById("qb-log");
+      function logLine(msg) {
+        var t = new Date().toISOString().substring(11, 19);
+        log.textContent += "[" + t + "] " + msg + "\n";
+        log.scrollTop = log.scrollHeight;
+      }
+      logLine("init() called");
+
+      // Patch fetch a second time to log requests/responses for visibility.
+      var loggedFetch = window.fetch;
+      window.fetch = function (input, opts) {
+        logLine("→ POST " + input + "  body=" + (opts && opts.body ? String(opts.body).substring(0, 200) : ""));
+        return loggedFetch(input, opts).then(function (r) {
+          var clone = r.clone();
+          clone.text().then(function (t) { logLine("← " + r.status + " " + t.substring(0, 200)); });
+          return r;
+        }, function (e) {
+          logLine("← network error: " + e.message);
+          throw e;
+        });
+      };
+
+      captured.init({
+        ajaxurl: "/ajax",
+        sesskey: "fake-sesskey-abc123",
+        buttontext: "❓ הסבר לי את השאלה",
+        courseid: 42,
+        coursename: "מבוא לתאוריה תעופתית",
+        rtl: true
+      });
+
+      // Scenario "dynamic-question": when the user clicks the picker option,
+      // append a fresh .que to verify the MutationObserver re-injects.
+      picker.addEventListener("change", function () {
+        if (picker.value !== "dynamic-question") return;
+        if (document.getElementById("dynamic-q")) return;
+        var div = document.createElement("div");
+        div.id = "dynamic-q";
+        div.className = "que multichoice";
+        div.innerHTML =
+          '<div class="info">שאלה 4 (נוצרה דינמית) — בודק את ה-MutationObserver</div>' +
+          '<div class="qtext">מה צפוי לחוות מבחינה אווירודינמית בטיסה דרך ענן רוטור?</div>' +
+          '<div class="answer">' +
+          '  <div class="r0"><input type="radio" name="q4" id="q4_a"><label for="q4_a">a. טורבולנציה קשה ושינויי גובה חדים שאינם צפויים</label></div>' +
+          '  <div class="r1"><input type="radio" name="q4" id="q4_b"><label for="q4_b">b. אוויר חלק ויציב</label></div>' +
+          '</div>';
+        document.querySelector(".page").insertBefore(div, document.getElementById("qb-log"));
+        logLine("appended dynamic .que — observer should inject a button automatically");
+      });
+
+      window.__qbResolve(captured);
+    };
+  })();
+</script>
+<script src="/qb.js" onload="window.__qbInit()"></script>
+
+</body>
+</html>

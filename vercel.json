@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "git diff --quiet HEAD~1 HEAD -- api dashboard.html package.json package-lock.json vercel.json"
+}
