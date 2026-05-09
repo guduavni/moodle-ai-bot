@@ -16,4 +16,4 @@ $string['buttontext_desc'] = 'Text displayed on the automatic help button.';
 $string['defaultbuttontext'] = '❓ Explain this question';
 $string['modaltitle'] = 'Modal title';
 $string['modaltitle_desc'] = 'Title displayed in the bot dialog.';
-$string['defaultmodaltitle'] = 'AI explanation';
+$string['defaultmodaltitle'] = 'Chat with SkyTutor';

@@ -6,7 +6,7 @@ define("local_questionbot/questionbot", [], function() {
 
             var ajaxurl = config.ajaxurl;
             var sesskey = config.sesskey;
-            var modalTitle = config.modaltitle || "הסבר מהבוט";
+            var modalTitle = config.modaltitle || "שיחה עם SkyTutor";
             var sendButtonText = config.sendbuttontext || "שלח";
             var inputPlaceholder = config.inputplaceholder || "כתוב שאלה המשך...";
             var noAnswerText = config.noanswertext || "לא התקבלה תשובה.";

@@ -16,4 +16,4 @@ $string['buttontext_desc'] = 'הטקסט שיופיע על כפתור העזרה
 $string['defaultbuttontext'] = '❓ הסבר לי את השאלה';
 $string['modaltitle'] = 'כותרת חלון הבוט';
 $string['modaltitle_desc'] = 'הכותרת שתוצג בחלון ההסבר.';
-$string['defaultmodaltitle'] = 'הסבר מהבוט';
+$string['defaultmodaltitle'] = 'שיחה עם SkyTutor';
