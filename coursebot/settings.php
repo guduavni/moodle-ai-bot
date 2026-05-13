@@ -16,7 +16,7 @@ if ($hassiteconfig) {
         'local_coursebot/endpoint',
         get_string('endpoint', 'local_coursebot'),
         get_string('endpoint_desc', 'local_coursebot'),
-        'https://skytutor-agent.vercel.app/api/moodle/chat/',
+        'https://skytutor-agent.vercel.app/api/moodle/conversation/',
         PARAM_URL
     ));
 }

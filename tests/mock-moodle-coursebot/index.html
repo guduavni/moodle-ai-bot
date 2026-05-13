@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>Mock Moodle Course View — Coursebot demo</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", "Heebo", sans-serif; background: #f4f5f7; margin: 0; padding: 24px; color: #222; }
+  .page { max-width: 980px; margin: 0 auto; }
+  header.fake-moodle { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  header.fake-moodle h1 { margin: 0; font-size: 18px; color: #0f6cbf; }
+  header.fake-moodle .scenario { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  header.fake-moodle select { padding: 4px 8px; }
+  .course-banner { background: linear-gradient(135deg,#0f6cbf,#0a4a83); color: #fff; border-radius: 8px; padding: 24px 28px; margin-bottom: 20px; }
+  .course-banner h2 { margin: 0 0 6px; font-size: 22px; }
+  .course-banner .crumbs { font-size: 12px; opacity: .85; }
+  .section { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 18px 22px; margin-bottom: 16px; }
+  .section h3 { margin: 0 0 10px; font-size: 16px; color: #0f3a6b; border-bottom: 1px solid #eef1f4; padding-bottom: 6px; }
+  .activity { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px dashed #eef1f4; }
+  .activity:last-child { border-bottom: none; }
+  .activity .icon { width: 24px; height: 24px; border-radius: 4px; background: #eef4fb; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: #0f6cbf; }
+  .activity a { color: #0f6cbf; text-decoration: none; }
+  .activity a:hover { text-decoration: underline; }
+  .scenario-note { font-size: 12px; color: #555; background: #fffbe6; border: 1px solid #ffe58f; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
+  #cb-log { font: 11px ui-monospace, "SF Mono", Menlo, monospace; background: #111; color: #eee; padding: 12px; border-radius: 6px; max-height: 200px; overflow: auto; white-space: pre-wrap; margin-top: 24px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="fake-moodle">
+  <h1>Mock Moodle · /course/view.php</h1>
+  <div class="scenario">
+    <label for="scenario-picker">תרחיש:</label>
+    <select id="scenario-picker">
+      <option value="success">success — canned local answer</option>
+      <option value="live">live — proxy to real skytutor (production)</option>
+      <option value="live-proxy">live-proxy — through deployed api/chat (validates the proxy)</option>
+      <option value="slow-3s">slow-3s — 3s delay (canned)</option>
+      <option value="401">401 — auth rejected (canned)</option>
+      <option value="refusal">refusal — non-aviation refused (canned)</option>
+      <option value="network-error">network-error — socket dropped</option>
+    </select>
+  </div>
+</header>
+
+<div class="scenario-note">
+  זהו עמוד דמה של מודל בתבנית <code>/course/view.php</code>. קוד ה-AMD נטען ישירות מ-<code>coursebot/amd/src/chat.js</code>.
+  השרת המקומי בפורט 3031 מחקה את <code>coursebot/ajax.php</code> ומחזיר תשובות מוכנות מראש לפי התרחיש הנבחר.
+  לחץ על הכפתור העגול בפינה הימנית-תחתונה כדי לפתוח את הצ'אט.
+</div>
+
+<div class="course-banner">
+  <div class="crumbs">בית · קורסים · ידע טכני כללי</div>
+  <h2>ידע טכני כללי — Aviation General Knowledge</h2>
+</div>
+
+<div class="section">
+  <h3>נושא 1 — אווירודינמיקה בסיסית</h3>
+  <div class="activity"><span class="icon">📄</span><a href="#">מבוא לכוחות הפועלים על המטוס</a></div>
+  <div class="activity"><span class="icon">🎬</span><a href="#">סרטון: עילוי וגרר</a></div>
+  <div class="activity"><span class="icon">📝</span><a href="#">בוחן: זוויות תקיפה</a></div>
+</div>
+
+<div class="section">
+  <h3>נושא 2 — מערכות מטוס</h3>
+  <div class="activity"><span class="icon">📄</span><a href="#">מערכת דלק</a></div>
+  <div class="activity"><span class="icon">📄</span><a href="#">מערכת חשמל</a></div>
+  <div class="activity"><span class="icon">📝</span><a href="#">בוחן: מד גובה ומד מהירות</a></div>
+</div>
+
+<div class="section">
+  <h3>נושא 3 — נהלי חירום</h3>
+  <div class="activity"><span class="icon">📄</span><a href="#">תקלת מנוע בטיסה</a></div>
+  <div class="activity"><span class="icon">📄</span><a href="#">אובדן תקשורת</a></div>
+</div>
+
+<div id="cb-log"></div>
+
+</div>
+
+<!-- AMD shim: capture local_coursebot/chat factory and call init(). -->
+<script>
+  (function () {
+    var captured = null;
+    window.define = function (name, deps, factory) {
+      try { captured = factory(); } catch (e) { console.error("AMD factory threw:", e); }
+    };
+    window.define.amd = true;
+
+    window.__cbReady = new Promise(function (resolve) {
+      window.__cbResolve = resolve;
+    });
+
+    window.__cbInit = function () {
+      if (!captured || typeof captured.init !== "function") {
+        console.error("chat.js did not register a module via define()");
+        return;
+      }
+
+      var picker = document.getElementById("scenario-picker");
+
+      // The plugin reads ajaxurl once at init time. Wrap fetch to inject the
+      // current scenario param on every call.
+      var origFetch = window.fetch.bind(window);
+      window.fetch = function (input, opts) {
+        if (typeof input === "string" && input.indexOf("/ajax") === 0) {
+          var u = new URL(input, window.location.origin);
+          u.searchParams.set("scenario", picker.value);
+          input = u.pathname + u.search;
+        }
+        return origFetch(input, opts);
+      };
+
+      var log = document.getElementById("cb-log");
+      function logLine(msg) {
+        var t = new Date().toISOString().substring(11, 19);
+        log.textContent += "[" + t + "] " + msg + "\n";
+        log.scrollTop = log.scrollHeight;
+      }
+      logLine("init() called");
+
+      var loggedFetch = window.fetch;
+      window.fetch = function (input, opts) {
+        logLine("→ POST " + input + "  body=" + (opts && opts.body ? String(opts.body).substring(0, 200) : ""));
+        return loggedFetch(input, opts).then(function (r) {
+          var clone = r.clone();
+          clone.text().then(function (t) { logLine("← " + r.status + " " + t.substring(0, 200)); });
+          return r;
+        }, function (e) {
+          logLine("← network error: " + e.message);
+          throw e;
+        });
+      };
+
+      captured.init({
+        ajaxurl: "/ajax",
+        sesskey: "fake-sesskey-abc123",
+        logourl: "/logo.png",
+        courseid: 16,
+        username: "admin",
+        fullname: "Admin User",
+        // courseshortname is what the prod ajax.php would forward as `course`
+        // when scenario=live or scenario=live-proxy. Match a real enrollment
+        // on the staging Moodle when running live mode.
+        courseshortname: "ידע טכני כללי",
+        coursefullname: "ידע טכני כללי — Aviation General Knowledge",
+        strings: {
+          buttontitle: "עוזר תעופה חכם",
+          brand: "Go Yeda",
+          tagline: "המדריך האישי שלך",
+          paneltitle: "SkyTutor – צ'אט תעופה",
+          greeting: "שלום {$a->name}! אני כאן לעזור לך בנושאי תעופה בקורס \"{$a->course}\". שאל אותי כל שאלה הקשורה לתעופה.",
+          placeholder: "הקלד את שאלת התעופה שלך…",
+          send: "שלח",
+          close: "סגור",
+          thinking: "חושב…",
+          errorprefix: "שגיאה: ",
+          noanswer: "לא התקבלה תשובה.",
+          refusal: "אני יכול לסייע רק בשאלות הקשורות לתעופה. אנא שאל שאלה בנושא תעופה."
+        }
+      });
+
+      window.__cbResolve(captured);
+    };
+  })();
+</script>
+<script src="/cb.js" onload="window.__cbInit()"></script>
+
+</body>
+</html>

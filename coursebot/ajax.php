@@ -41,7 +41,7 @@ if ($q === '') {
 
 $endpoint = get_config('local_coursebot', 'endpoint');
 if (!$endpoint) {
-    $endpoint = 'https://skytutor-agent.vercel.app/api/moodle/chat/';
+    $endpoint = 'https://skytutor-agent.vercel.app/api/moodle/conversation/';
 }
 
 $courseparam = $course->shortname !== '' ? $course->shortname : $course->fullname;
@@ -49,8 +49,7 @@ $courseparam = $course->shortname !== '' ? $course->shortname : $course->fullnam
 $body = json_encode([
     'username' => $USER->username,
     'course'   => $courseparam,
-    'question' => $q,
-    'q'        => $q,
+    'message'  => $q,
 ], JSON_UNESCAPED_UNICODE);
 
 require_once($CFG->libdir . '/filelib.php');

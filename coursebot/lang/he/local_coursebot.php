@@ -5,7 +5,7 @@ $string['pluginname']    = 'בוט קורס – SkyTutor';
 $string['enabled']       = 'מופעל';
 $string['enabled_desc']  = 'הפעל את ווידג\'ט הצ\'אט הצף בעמודי הקורס.';
 $string['endpoint']      = 'כתובת ה-API של הצ\'אט';
-$string['endpoint_desc'] = 'כתובת ה-endpoint של SkyTutor עבור moodle/chat.';
+$string['endpoint_desc'] = 'כתובת ה-endpoint של SkyTutor עבור moodle/conversation (צ\'אט מצבי ברמת הקורס).';
 
 $string['buttontitle']   = 'עוזר תעופה חכם';
 $string['brand']         = 'Go Yeda';
