@@ -5,7 +5,7 @@ $string['pluginname']    = 'Course AI Bot';
 $string['enabled']       = 'Enabled';
 $string['enabled_desc']  = 'Enable the floating AI chat widget on course pages.';
 $string['endpoint']      = 'Chat endpoint URL';
-$string['endpoint_desc'] = 'URL of the SkyTutor moodle/chat endpoint.';
+$string['endpoint_desc'] = 'URL of the SkyTutor moodle/conversation endpoint (stateful course-level chat).';
 
 $string['buttontitle']   = 'Aviation AI assistant';
 $string['brand']         = 'Go Yeda';
