@@ -29,6 +29,7 @@ const PORT = Number(process.env.PORT || 3030);
 //                   moodle-ai-bot.vercel.app, which then forwards to
 //                   skytutor. Use this to validate the proxy itself.
 const SKYTUTOR_API_URL = process.env.SKYTUTOR_API_URL || "https://skytutor-agent.vercel.app/api/moodle/chat/";
+const LOCAL_SKYTUTOR_URL = process.env.LOCAL_SKYTUTOR_URL || "http://localhost:3000/api/moodle/chat/";
 const PROXY_API_URL = process.env.MOODLE_AI_BOT_PROXY_URL || "https://moodle-ai-bot.vercel.app/api/chat";
 const SKYTUTOR_USERNAME = process.env.SKYTUTOR_USERNAME || "admin";
 const SKYTUTOR_COURSE_OVERRIDE = process.env.SKYTUTOR_COURSE || "";
@@ -239,6 +240,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (scenario === "live-local") {
+      const result = await proxyToUpstream(parsed, LOCAL_SKYTUTOR_URL, "live-local");
+      send(
+        res,
+        result.status,
+        { "Content-Type": "application/json; charset=utf-8" },
+        JSON.stringify(result.body)
+      );
+      return;
+    }
+
     if (scenario === "live-proxy") {
       const result = await proxyToUpstream(parsed, PROXY_API_URL, "live-proxy");
       send(
@@ -286,8 +298,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\nMock Moodle running at http://localhost:" + PORT);
   console.log("Open it in a browser, click ❓, then keep typing follow-ups.");
-  console.log("Scenarios: success / slow-3s / 401 / network-error / dynamic-question / live (skytutor) / live-proxy (api/chat).");
+  console.log("Scenarios: success / slow-3s / 401 / network-error / dynamic-question / live / live-local / live-proxy.");
   console.log("Live mode       → " + SKYTUTOR_API_URL);
+  console.log("Live-local mode → " + LOCAL_SKYTUTOR_URL);
   console.log("Live-proxy mode → " + PROXY_API_URL);
   console.log("                  username=\"" + SKYTUTOR_USERNAME + "\"" +
     (SKYTUTOR_COURSE_OVERRIDE ? " course=\"" + SKYTUTOR_COURSE_OVERRIDE + "\" (env override)" : " course=<from page coursename>"));

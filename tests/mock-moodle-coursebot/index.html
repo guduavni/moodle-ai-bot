@@ -34,11 +34,26 @@
     <select id="scenario-picker">
       <option value="success">success — canned local answer</option>
       <option value="live">live — proxy to real skytutor (production)</option>
+      <option value="live-local">live-local — local skytutor on :3000</option>
       <option value="live-proxy">live-proxy — through deployed api/chat (validates the proxy)</option>
       <option value="slow-3s">slow-3s — 3s delay (canned)</option>
       <option value="401">401 — auth rejected (canned)</option>
       <option value="refusal">refusal — non-aviation refused (canned)</option>
       <option value="network-error">network-error — socket dropped</option>
+    </select>
+  </div>
+  <div class="scenario">
+    <label for="domain-picker">קורס (coursename):</label>
+    <select id="domain-picker">
+      <option value="ידע טכני כללי">ידע טכני כללי — General Technical</option>
+      <option value="מטאורולוגיה">מטאורולוגיה — Meteorology</option>
+      <option value="רדיו טלפון">רדיו טלפון — Radiotelephony</option>
+      <option value="הכרת מטוס C-152 ספר פתוח">ססנה 152 — ספר פתוח</option>
+      <option value="הכרת מטוס C-152 ספר סגור">ססנה 152 — ספר סגור</option>
+      <option value="נווטות">נווטות — Navigation</option>
+      <option value="חוקה">חוקה — Regulations</option>
+      <option value="ביצועי אנוש">ביצועי אנוש — Human Performance</option>
+      <option value="מדר״ט מכשירים">מדר״ט מכשירים — CFII</option>
     </select>
   </div>
 </header>
@@ -97,16 +112,29 @@
         return;
       }
 
-      var picker = document.getElementById("scenario-picker");
+      var scenarioPicker = document.getElementById("scenario-picker");
+      var domainPicker = document.getElementById("domain-picker");
 
-      // The plugin reads ajaxurl once at init time. Wrap fetch to inject the
-      // current scenario param on every call.
+      // The plugin reads ajaxurl/courseshortname once at init time, so wrap
+      // fetch to inject the *current* picker values on every call:
+      //   • scenario goes into the URL.
+      //   • coursename in the JSON body is rewritten so live / live-proxy
+      //     forward the chosen course to skytutor for domain selection.
+      //     (The coursebot's ajax.php forwards `coursename` as `course`.)
       var origFetch = window.fetch.bind(window);
       window.fetch = function (input, opts) {
         if (typeof input === "string" && input.indexOf("/ajax") === 0) {
           var u = new URL(input, window.location.origin);
-          u.searchParams.set("scenario", picker.value);
+          u.searchParams.set("scenario", scenarioPicker.value);
           input = u.pathname + u.search;
+
+          if (opts && typeof opts.body === "string") {
+            try {
+              var body = JSON.parse(opts.body);
+              body.coursename = domainPicker.value;
+              opts = Object.assign({}, opts, { body: JSON.stringify(body) });
+            } catch (e) { /* not JSON; leave alone */ }
+          }
         }
         return origFetch(input, opts);
       };
@@ -117,7 +145,27 @@
         log.textContent += "[" + t + "] " + msg + "\n";
         log.scrollTop = log.scrollHeight;
       }
-      logLine("init() called");
+      logLine("init() called — domain=" + domainPicker.value);
+
+      // chat.js captures `courseLabel` at init time and renders the greeting
+      // bubble once when the panel first opens. So changing the domain picker
+      // after that doesn't update the greeting on its own. Rewrite the
+      // greeting bubble in place so it tracks the picker. The actual outgoing
+      // fetch body is already dynamic via the wrapper above.
+      function rewriteGreeting() {
+        var thread = document.getElementById("lcb-thread");
+        var greet = thread && thread.querySelector(".lcb-bubble-bot");
+        if (!greet) return;
+        var courseLabel = domainPicker.value + " — Aviation";
+        greet.innerText =
+          'שלום admin! אני כאן לעזור לך בנושאי תעופה בקורס "' +
+          courseLabel +
+          '". שאל אותי כל שאלה הקשורה לתעופה.';
+      }
+      domainPicker.addEventListener("change", function () {
+        logLine("domain changed → " + domainPicker.value);
+        rewriteGreeting();
+      });
 
       var loggedFetch = window.fetch;
       window.fetch = function (input, opts) {
@@ -139,11 +187,10 @@
         courseid: 16,
         username: "admin",
         fullname: "Admin User",
-        // courseshortname is what the prod ajax.php would forward as `course`
-        // when scenario=live or scenario=live-proxy. Match a real enrollment
-        // on the staging Moodle when running live mode.
-        courseshortname: "ידע טכני כללי",
-        coursefullname: "ידע טכני כללי — Aviation General Knowledge",
+        // Initial value only — the live coursename is sourced from the
+        // domain picker on every fetch (see wrapper above).
+        courseshortname: domainPicker.value,
+        coursefullname: domainPicker.value + " — Aviation",
         strings: {
           buttontitle: "עוזר תעופה חכם",
           brand: "Go Yeda",
