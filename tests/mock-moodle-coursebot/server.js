@@ -21,6 +21,7 @@ const PORT = Number(process.env.PORT || 3031);
 //   `live`        → straight to skytutor (bypasses api/chat.js).
 //   `live-proxy`  → through the deployed api/chat proxy on moodle-ai-bot.vercel.app.
 const SKYTUTOR_API_URL = process.env.SKYTUTOR_API_URL || "https://skytutor-agent.vercel.app/api/moodle/conversation/";
+const LOCAL_SKYTUTOR_URL = process.env.LOCAL_SKYTUTOR_URL || "http://localhost:3000/api/moodle/conversation/";
 const PROXY_API_URL = process.env.MOODLE_AI_BOT_PROXY_URL || "https://moodle-ai-bot.vercel.app/api/chat";
 const SKYTUTOR_USERNAME = process.env.SKYTUTOR_USERNAME || "admin";
 const SKYTUTOR_COURSE_OVERRIDE = process.env.SKYTUTOR_COURSE || "";
@@ -59,7 +60,12 @@ async function proxyToUpstream(parsed, upstreamUrl, label) {
     return { status: 400, body: { error: "Missing q" } };
   }
 
-  const course = SKYTUTOR_COURSE_OVERRIDE || "ידע טכני כללי";
+  // Honor the coursename the page injected into the body (driven by the
+  // domain picker). Fall back to env override, then to a sensible default.
+  const course =
+    SKYTUTOR_COURSE_OVERRIDE ||
+    String((parsed && parsed.coursename) || "").trim() ||
+    "ידע טכני כללי";
 
   const payload = {
     username: SKYTUTOR_USERNAME,
@@ -212,6 +218,17 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (scenario === "live-local") {
+      const result = await proxyToUpstream(parsed, LOCAL_SKYTUTOR_URL, "live-local");
+      send(
+        res,
+        result.status,
+        { "Content-Type": "application/json; charset=utf-8" },
+        JSON.stringify(result.body)
+      );
+      return;
+    }
+
     if (scenario === "live-proxy") {
       const result = await proxyToUpstream(parsed, PROXY_API_URL, "live-proxy");
       send(
@@ -252,8 +269,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\nMock Coursebot Moodle running at http://localhost:" + PORT);
   console.log("Open in a browser, click the round logo button (bottom-right), then chat.");
-  console.log("Scenarios: success / slow-3s / 401 / refusal / network-error / live / live-proxy.");
+  console.log("Scenarios: success / slow-3s / 401 / refusal / network-error / live / live-local / live-proxy.");
   console.log("Live mode       → " + SKYTUTOR_API_URL);
+  console.log("Live-local mode → " + LOCAL_SKYTUTOR_URL);
   console.log("Live-proxy mode → " + PROXY_API_URL);
   console.log("                  username=\"" + SKYTUTOR_USERNAME + "\"" +
     (SKYTUTOR_COURSE_OVERRIDE ? " course=\"" + SKYTUTOR_COURSE_OVERRIDE + "\" (env override)" : " course=ידע טכני כללי"));

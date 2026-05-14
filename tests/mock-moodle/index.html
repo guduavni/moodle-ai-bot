@@ -6,17 +6,27 @@
 <style>
   body { font-family: system-ui, -apple-system, "Segoe UI", "Heebo", sans-serif; background: #f4f5f7; margin: 0; padding: 24px; color: #222; }
   .page { max-width: 900px; margin: 0 auto; }
-  header.fake-moodle { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  header.fake-moodle { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   header.fake-moodle h1 { margin: 0; font-size: 18px; color: #0f6cbf; }
-  header.fake-moodle .scenario { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+  header.fake-moodle .picker { display: flex; gap: 8px; align-items: center; font-size: 13px; }
   header.fake-moodle select { padding: 4px 8px; }
   .que { background: #fff; border: 1px solid #d8d8d8; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+  .que.hidden { display: none; }
   .que .info { color: #888; font-size: 12px; margin-bottom: 4px; }
+  .que .domain-tag { display: inline-block; background: #eef4fb; color: #0f6cbf; padding: 1px 8px; border-radius: 10px; margin-inline-end: 8px; font-weight: 600; }
   .qtext { font-size: 16px; line-height: 1.6; margin-bottom: 12px; }
   .answer { padding-right: 8px; }
   .answer > div { padding: 6px 0; display: flex; align-items: center; gap: 8px; }
   .answer label { cursor: pointer; }
   .answer input { margin-left: 6px; }
+  /* Custom-MCQ slot: yellow tinted card, with typeable Q/A inputs. */
+  .que.custom { background: #fffcf3; border-color: #f4d966; }
+  .que.custom .info { color: #8a6800; }
+  .que.custom .custom-q-input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid #d6b835; border-radius: 6px; margin-bottom: 8px; direction: rtl; resize: vertical; }
+  .que.custom .custom-a-input { flex: 1; font: inherit; padding: 4px 8px; border: 1px solid #e0c352; border-radius: 4px; direction: rtl; }
+  .que.custom .qtext { color: #444; font-style: italic; min-height: 1.4em; }
+  .que.custom .qtext:empty:before { content: attr(data-placeholder); color: #bbb; }
+  .que.custom .answer label { color: #444; font-style: italic; min-width: 24px; }
   .scenario-note { font-size: 12px; color: #555; background: #fffbe6; border: 1px solid #ffe58f; padding: 8px 12px; border-radius: 6px; margin-bottom: 16px; }
   #qb-log { font: 11px ui-monospace, "SF Mono", Menlo, monospace; background: #111; color: #eee; padding: 12px; border-radius: 6px; max-height: 180px; overflow: auto; white-space: pre-wrap; margin-top: 24px; }
 </style>
@@ -26,70 +36,427 @@
 
 <header class="fake-moodle">
   <h1>Mock Moodle Quiz · תאוריה תעופתית</h1>
-  <div class="scenario">
+  <div class="picker">
     <label for="scenario-picker">תרחיש:</label>
     <select id="scenario-picker">
       <option value="success">success — canned local answer</option>
       <option value="live">live — proxy to real skytutor (production)</option>
-      <option value="live-proxy">live-proxy — go through deployed api/chat (validates the proxy)</option>
+      <option value="live-local">live-local — local skytutor on :3000</option>
+      <option value="live-proxy">live-proxy — go through deployed api/chat</option>
       <option value="slow-3s">slow-3s — 3s delay (canned)</option>
       <option value="401">401 — auth rejected (canned)</option>
       <option value="network-error">network-error — socket dropped</option>
-      <option value="dynamic-question">dynamic-question — append a 4th .que after click</option>
+      <option value="dynamic-question">dynamic-question — append an extra .que</option>
+    </select>
+  </div>
+  <div class="picker">
+    <label for="domain-picker">קורס (coursename):</label>
+    <select id="domain-picker">
+      <option value="ידע טכני כללי">ידע טכני כללי — General Technical</option>
+      <option value="מטאורולוגיה">מטאורולוגיה — Meteorology</option>
+      <option value="רדיו טלפון">רדיו טלפון — Radiotelephony</option>
+      <option value="הכרת מטוס C-152 ספר פתוח">ססנה 152 — ספר פתוח</option>
+      <option value="הכרת מטוס C-152 ספר סגור">ססנה 152 — ספר סגור</option>
+      <option value="נווטות">נווטות — Navigation</option>
+      <option value="חוקה">חוקה — Regulations</option>
+      <option value="ביצועי אנוש">ביצועי אנוש — Human Performance</option>
+      <option value="מדר״ט מכשירים">מדר״ט מכשירים — CFII</option>
     </select>
   </div>
 </header>
 
 <div class="scenario-note">
   זהו עמוד דמה למערכת Moodle. קוד ה-AMD נטען ישירות מתוך <code>QBot/questionbot/amd/src/questionbot.js</code>.
-  השרת המקומי בפורט 3030 מחקה את ajax.php ומחזיר תשובות מוכנות מראש בהתאם לתרחיש שנבחר.
+  השרת המקומי בפורט 3030 מחקה את ajax.php. בחר תרחיש + קורס (coursename), ולחץ ❓ על אחת מ-6 השאלות.
+  בתרחישי <code>live</code> / <code>live-proxy</code>, ה-coursename מועבר ל-skytutor לבחירת ה-domain.
 </div>
 
-<!-- Q1: standard <input id> + <label for> pattern -->
-<div class="que multichoice deferredfeedback notyetanswered">
-  <div class="info">שאלה 1</div>
-  <div class="qtext">
-    מה הגורם הישיר להזדקרות בטיסה ישרה ואופקית?
-  </div>
-  <div class="answer">
-    <div class="r0"><input type="radio" name="q1" id="q1_a"><label for="q1_a">a. חריגה מזווית התקיפה הקריטית</label></div>
-    <div class="r1"><input type="radio" name="q1" id="q1_b"><label for="q1_b">b. ירידה במהירות מתחת ל-Vs</label></div>
-    <div class="r2"><input type="radio" name="q1" id="q1_c"><label for="q1_c">c. הגדלת עומס G במהלך פנייה</label></div>
-    <div class="r3"><input type="radio" name="q1" id="q1_d"><label for="q1_d">d. עלייה בצפיפות האוויר</label></div>
-  </div>
-</div>
-
-<!-- Q2: input wrapped inside its <label> (forces the parentLabel fallback) -->
-<div class="que multichoice">
-  <div class="info">שאלה 2 — תבנית: input בתוך label</div>
-  <div class="qtext">
-    בטיסה ישרה ואופקית במהירות קבועה, מה קורה לזווית התקיפה ככל שמשקל המטוס גדל?
-  </div>
-  <div class="answer">
-    <div class="r0"><label><input type="radio" name="q2"> זווית התקיפה גדלה</label></div>
-    <div class="r1"><label><input type="radio" name="q2"> זווית התקיפה קטנה</label></div>
-    <div class="r2"><label><input type="radio" name="q2"> זווית התקיפה אינה משתנה</label></div>
-    <div class="r3"><label><input type="radio" name="q2"> תלוי בכיוון הרוח בלבד</label></div>
-  </div>
-</div>
-
-<!-- Q3: input alone in .r0/.r1 row, no <label> at all (forces row-clone fallback).
-     Also includes one >180 char distractor to exercise the answer-length filter. -->
-<div class="que multichoice">
-  <div class="info">שאלה 3 — תבנית: ללא label, נופל ל־row clone</div>
-  <div class="qtext">
-    מה ההשפעה העיקרית של פתיחת מדפים בשלב הגישה לנחיתה?
-  </div>
-  <div class="answer">
-    <div class="r0"><input type="radio" name="q3"> הגדלת מקדם העילוי לצד תוספת גרר אווירודינמי</div>
-    <div class="r1"><input type="radio" name="q3"> הקטנת זווית התקיפה הקריטית בלבד, ללא שינוי בעילוי</div>
-    <div class="r2"><input type="radio" name="q3"> הגדלת מהירות ההזדקרות הנקייה ב-30 קשר, יצירת מומנט גלגול חזק שמחייב תיקון מתמיד במהלך הגישה ועלייה משמעותית בעומסים המבניים על מבנה הזנב והמטוס באופן כללי</div>
-  </div>
-</div>
+<div id="questions-container"></div>
 
 <div id="qb-log"></div>
 
 </div>
+
+<!-- 36 MCQs in 6 domains, rendered before the AMD module loads so inject()
+     sees them on its first pass. Labeling patterns are varied across the
+     six questions of each domain (label[for=id] / wrapped input / no label)
+     so the live UI exercises all three scraper fallbacks. -->
+<script>
+  (function () {
+    var QUESTIONS_BY_DOMAIN = {
+      "ידע טכני כללי": [
+        {
+          q: "מה הגורם הישיר להזדקרות בטיסה ישרה ואופקית?",
+          a: ["חריגה מזווית התקיפה הקריטית", "ירידה במהירות מתחת ל-Vs", "הגדלת עומס G במהלך פנייה", "עלייה בצפיפות האוויר"]
+        },
+        {
+          q: "בטיסה ישרה ואופקית במהירות קבועה, מה קורה לזווית התקיפה ככל שמשקל המטוס גדל?",
+          a: ["זווית התקיפה גדלה", "זווית התקיפה קטנה", "זווית התקיפה אינה משתנה", "תלוי בכיוון הרוח בלבד"]
+        },
+        {
+          q: "מה ההשפעה העיקרית של פתיחת מדפים בשלב הגישה לנחיתה?",
+          a: ["הגדלת מקדם העילוי לצד תוספת גרר אווירודינמי", "הקטנת זווית התקיפה הקריטית בלבד, ללא שינוי בעילוי", "ביטול ההזדקרות לחלוטין", "הגדלת המהירות המקסימלית של המטוס"]
+        },
+        {
+          q: "מהו תפקיד ה-Ailerons (סגירונים) במטוס?",
+          a: ["שליטה בגלגול סביב ציר האורך", "שליטה בעלרוד סביב ציר הרוחב", "שליטה בכיוון סביב ציר האנך", "עצירת המטוס בקרקע בלבד"]
+        },
+        {
+          q: "מה משמעות מהירות Vy בטיסת מטוס?",
+          a: ["מהירות לטיפוס מקסימלי בקצב טיפוס לזמן", "מהירות הזדקרות נקייה", "מהירות מבנית מקסימלית", "מהירות נחיתה מומלצת"]
+        },
+        {
+          q: "Center of Gravity הנמצא מאחורי הגבול האחורי — מה השפעתו על יציבות המטוס?",
+          a: ["המטוס פחות יציב — נטייה לעלייה והזדקרות", "המטוס יציב יתר על המידה ופחות מתמרן", "אין השפעה על היציבות", "הההמראה מתקצרת משמעותית"]
+        }
+      ],
+      "חוקה": [
+        {
+          q: "מהו הגובה המינימלי החוקי לטיסת VFR מעל אזור מאוכלס בצפיפות?",
+          a: ["1,000 רגל מעל המכשול הגבוה ביותר ברדיוס 600 מטר", "500 רגל מעל המכשול הגבוה ביותר", "2,000 רגל בלבד", "אין הגבלת גובה מינימלית"]
+        },
+        {
+          q: "מהו תוקף Medical Class 2 לטייס פרטי מעל גיל 40?",
+          a: ["שנה אחת", "שנתיים", "חצי שנה", "ללא הגבלת זמן"]
+        },
+        {
+          q: "מהי דרישת הנראות האופקית המינימלית בטיסה VFR במרחב מבוקר מתחת ל-10,000 רגל?",
+          a: ["5 ק\"מ", "1 ק\"מ", "10 ק\"מ", "אין דרישה מינימלית"]
+        },
+        {
+          q: "מהן הזכויות העיקריות של בעל רישיון PPL בישראל?",
+          a: ["טיסות פנאי ללא תמורה כספית", "טיסות מסחריות בתשלום", "הדרכת טיס בתשלום", "טיסות IFR בלבד"]
+        },
+        {
+          q: "מה סטטוס מטוס שלא בוצעה לו ביקורת שנתית (Annual)?",
+          a: ["לא כשיר לטיסה — אסור להמריא בו", "תקין לטיסה רגילה", "תקין לטיסות אימונים בלבד", "תקין במצבי חירום בלבד"]
+        },
+        {
+          q: "מתי חובה להגיש Flight Plan (תכנית טיסה) לפני יציאה?",
+          a: ["כשעוזבים את מרחב הבקרה / חוצים גבול", "תמיד, בכל טיסה", "רק בטיסות IFR", "אף פעם — לא חובה"]
+        }
+      ],
+      "מטאורולוגיה": [
+        {
+          q: "מה משמעות \"Dew Point\" בדוח METAR?",
+          a: ["טמפרטורת האוויר בה אדי המים מתחילים להתעבות", "טמפרטורת פני הקרקע", "גובה ענני הקומולוס", "עוצמת הרוח על פני השדה"]
+        },
+        {
+          q: "אילו תנאים אופייניים להיווצרות ערפל קרינה (Radiation Fog)?",
+          a: ["אוויר רגוע, שמיים בהירים בלילה, לחות גבוהה", "רוחות חזקות במהלך היום", "גשם כבד וטמפרטורות חמות", "טמפרטורות מעל 30 מעלות צלזיוס"]
+        },
+        {
+          q: "מה משמעות הקיצור \"TS\" בדוח METAR או TAF?",
+          a: ["Thunderstorm — סופה רעמית", "Turbulence Severe — טורבולנציה חמורה בלבד", "Temperature Standard", "Tower Service"]
+        },
+        {
+          q: "מהו הסיכון העיקרי בטיסה דרך Microburst?",
+          a: ["גזיר רוח חזק וירידת גובה פתאומית", "ראייה לקויה זמנית בלבד", "סחיפה צידית קלה", "עלייה חזקה לא רצויה"]
+        },
+        {
+          q: "באיזה סוג ענן מתפתחות סופות רעמיות?",
+          a: ["Cumulonimbus", "Cirrus", "Stratus", "Altocumulus"]
+        },
+        {
+          q: "מהו ה-Standard Lapse Rate באטמוספירה הסטנדרטית?",
+          a: ["ירידה של כ-2°C לכל 1,000 רגל עלייה", "ירידה של 10°C לכל 1,000 רגל", "עלייה של 2°C לכל 1,000 רגל", "אין שינוי טמפרטורה עם הגובה"]
+        }
+      ],
+      "נווטות": [
+        {
+          q: "ההפרש בין צפון אמיתי לצפון מגנטי באזור מסוים מכונה?",
+          a: ["Variation (סטייה מגנטית)", "Deviation (חריגת מצפן)", "Drift (סחיפה ברוח)", "Heading (כיוון מטוס)"]
+        },
+        {
+          q: "מהי \"סחיפה\" (Drift) בנווטות?",
+          a: ["ההפרש בין Heading ל-Track כתוצאה מרוח", "ההפרש בין כיוון אמיתי לכיוון מגנטי", "תיקון המצפן בגלל מתכת קרובה", "אינטרפולציה גרפית על המפה"]
+        },
+        {
+          q: "אם Heading=090° ו-Track=090° בהיעדר רוח, מהי הסחיפה (Drift Angle)?",
+          a: ["0°", "90° צפון", "45° דרום", "בלתי ניתן לחישוב"]
+        },
+        {
+          q: "מה משמעות הקיצור \"GS\" בחישובי טיסה?",
+          a: ["Ground Speed — מהירות יחסית לקרקע", "Ground School — לימודי קרקע", "General Strength", "Gravity Standard"]
+        },
+        {
+          q: "מה משמעות הקיצור \"ETA\" בתכנון טיסה?",
+          a: ["Estimated Time of Arrival — שעת הגעה משוערת", "Earth Time Adjustment", "End To Approach", "Engine Tracking Algorithm"]
+        },
+        {
+          q: "מהי נקודת תורן (Checkpoint) בטיסת VFR?",
+          a: ["נקודה מוכרת על פני הקרקע לאיתות מיקום בטיסה", "מקום שאסור לעבור בו", "אזור נחיתת חירום מוגדר", "אישור רדיו ייעודי"]
+        }
+      ],
+      "רדיו טלפון": [
+        {
+          q: "בקריאה ראשונית למגדל פיקוח, מהו הסדר הנכון של המידע?",
+          a: ["תחנת היעד, סימן המטוס, מיקום, בקשה", "הבקשה תחילה ואחריה סימן המטוס בלבד", "רק סימן המטוס וכוונת הטיסה", "אין סדר מחייב בקריאה הראשונית"]
+        },
+        {
+          q: "מה משמעות \"Roger\" בתקשורת תעופתית?",
+          a: ["קיבלתי את כל ההודעה האחרונה", "הסכמה לבקשה לפעולה", "סוף שיחה רשמי", "בקשה להסבר נוסף"]
+        },
+        {
+          q: "מה משמעות \"Wilco\" בתקשורת תעופתית?",
+          a: ["Will Comply — הבנתי ואבצע את ההנחיה", "אאשר את הקבלה בלבד", "אסיים את הקשר", "אעזוב את התדר"]
+        },
+        {
+          q: "באיזה מצב משדרים \"MAYDAY\" (שלוש פעמים)?",
+          a: ["מצוקה דחופה — סכנת חיים מיידית", "בקשה רגילה לרעיון", "דחיפות בינונית ללא סיכון", "תקלה מינורית"]
+        },
+        {
+          q: "מה משמעות \"Squawk 7700\" בקוד טרנספונדר?",
+          a: ["מצב חירום כללי", "טיסה רוטינית רגילה", "אובדן תקשורת רדיו", "חטיפת מטוס"]
+        },
+        {
+          q: "מה משמעות הוראת \"Go Around\" מהמגדל?",
+          a: ["נטוש את הנחיתה, עלה ובצע סבב שני", "המשך נחיתה רגילה", "סובב את המטוס בקרקע", "סע לאחור על המסלול"]
+        }
+      ],
+      "ביצועי אנוש": [
+        {
+          q: "\"Spatial Disorientation\" — מהי המשמעות העיקרית?",
+          a: ["אובדן תחושת ההתמצאות במרחב ללא רפרנס ויזואלי חיצוני", "סחרחורת קלה לאחר אכילה לפני טיסה", "עייפות שמצטברת בטיסה ארוכה", "תחושת רעב במהלך טיסה"]
+        },
+        {
+          q: "מהו הסיכון העיקרי של היפוקסיה (Hypoxia) בגובה?",
+          a: ["תפקוד מוחי לקוי וקבלת החלטות פגומה", "סחרחורת קלה בלבד", "ראייה צבעונית מוגברת", "עלייה בלחץ הדם"]
+        },
+        {
+          q: "מהי \"Spatial Illusion\" בטיסה?",
+          a: ["תחושה שגויה של מיקום או תנועה במרחב", "חישוב מהירות שגוי במחשבון", "שינוי בצבע התצוגות בלוח", "רעש מטריד מהמנוע"]
+        },
+        {
+          q: "מאיזה גובה דורש החוק חמצן בטיסה בתא לא לחוץ (בישראל / FAA)?",
+          a: ["מעל 12,500 רגל לאחר 30 דקות, ומעל 14,000 מיידית", "מתחת ל-1,000 רגל", "רק מעל 30,000 רגל", "אין צורך אף פעם"]
+        },
+        {
+          q: "מהו \"Get-There-itis\" בקבלת החלטות בטיסה?",
+          a: ["דחיקת לוח זמנים על חשבון שיקולי בטיחות", "תיק עזרה ראשונה בטיסה", "שכחת תדר רדיו תחת לחץ", "כאב ראש מתמשך מסיבה לא ידועה"]
+        },
+        {
+          q: "מהו עיקרון ה-\"Sterile Cockpit\" בתעופה?",
+          a: ["איסור על שיחות לא חיוניות בשלבי טיסה קריטיים", "ניקוי תא הטייס לפני המראה", "תא הטייסים נטול חיידקים פיזית", "תא בו רק טייס אחד יכול לשבת"]
+        }
+      ],
+      "הכרת מטוס C-152 ספר פתוח": [
+        {
+          q: "מהי כמות הדלק השמישה (Usable Fuel) בסנה 152 סטנדרטי?",
+          a: ["24.5 גלון", "26 גלון", "37.5 גלון", "19 גלון"]
+        },
+        {
+          q: "מהי מהירות ההזדקרות עם מדפים מלאים (Vso) בסנה 152?",
+          a: ["43 KIAS", "60 KIAS", "75 KIAS", "30 KIAS"]
+        },
+        {
+          q: "מהי המהירות המקסימלית להפעלת מדפים מלאים (Vfe) ב-C-152?",
+          a: ["85 KIAS", "120 KIAS", "150 KIAS", "55 KIAS"]
+        },
+        {
+          q: "מהי מהירות התמרון (Va) במשקל מקסימלי בסנה 152?",
+          a: ["104 KIAS", "79 KIAS", "60 KIAS", "150 KIAS"]
+        },
+        {
+          q: "מתח מערכת החשמל בסנה 152?",
+          a: ["מערכת 28V (מצבר 24V)", "מערכת 14V (מצבר 12V)", "100 וולט AC", "6 וולט"]
+        },
+        {
+          q: "מהי קיבולת השמן הכוללת במנוע סנה 152?",
+          a: ["6 קוורט", "4 קוורט", "10 קוורט", "2 קוורט"]
+        }
+      ],
+      "הכרת מטוס C-152 ספר סגור": [
+        {
+          q: "פעולה ראשונה בתקלת מנוע בטיסה (Engine Failure in Flight)?",
+          a: ["שמור על מהירות Best Glide (60 KIAS) ובחר שדה נחיתה", "נסה הצתה מיידית של המנוע", "הודע למגדל קודם כל", "הפעל את מערכת הדלק החלופית"]
+        },
+        {
+          q: "מהי מהירות ה-Best Glide הסטנדרטית בסנה 152?",
+          a: ["60 KIAS", "80 KIAS", "50 KIAS", "100 KIAS"]
+        },
+        {
+          q: "פעולה במקרה של אש במנוע על הקרקע (Engine Fire During Start)?",
+          a: ["המשך הזנקה והעלה הספק כדי לכבות; אם נכשל — סגור דלק והפסק", "כבה מיידית ופנה לטכנאי", "פתח את חלון התא להאוורור", "מסור פיקוד למדריך"]
+        },
+        {
+          q: "בהזדקרות מלאה (Power-Off Stall), מהי פעולת ההתאוששות הראשונה?",
+          a: ["הפחת זווית התקיפה (Pitch Down)", "הוסף הספק מלא בלי שינוי במצבה", "נטה הצידה בעזרת ההגאים", "מסור את ההגה"]
+        },
+        {
+          q: "בתקלת מערכת חשמל מלאה ב-C-152, אילו מכשירים ימשיכו לתפקד?",
+          a: ["מד גובה, מד מהירות, מצפן מגנטי ומד אופקי מלאכותי ואקום", "כל מכשירי הלוח", "רק רדיו ו-GPS", "אף מכשיר לא יפעל"]
+        },
+        {
+          q: "בתקלת תקשורת מלאה (Lost Communications) ב-VFR, מה מקובל לעשות?",
+          a: ["המשך VFR לשדה היעד; שדר 7600 בטרנספונדר; פעל לפי תוכנית טיסה", "נחת מיד בשדה הקרוב ביותר", "הצתת מנוע מחדש", "המשך לטוס ללא שום פעולה"]
+        }
+      ],
+      "מדר״ט מכשירים": [
+        {
+          q: "מה משמעות \"VOR\" בנווטות מכשירים?",
+          a: ["VHF Omnidirectional Range — תחנת רדיו ניווט להכוונה רדיאלית", "מטוס מסחרי גדול", "הוראת חירום", "מערכת חמצן"]
+        },
+        {
+          q: "מהי משמעות \"ILS\" בגישת נחיתה?",
+          a: ["Instrument Landing System — מערכת נחיתת מכשירים", "International Light Signal", "Internal Loop System", "Inverted Lateral Stabilization"]
+        },
+        {
+          q: "מהו ה-Localizer במערכת ILS?",
+          a: ["אות צידי המסמן את ציר המסלול", "אות אנכי המסמן את גובה הגישה", "תחנת רדיו מרוחקת על המסלול", "מד גובה אופקי"]
+        },
+        {
+          q: "מה משמעות \"DME\" בנווטות מכשירים?",
+          a: ["Distance Measuring Equipment — מד מרחק לתחנה", "Direct Magnetic East", "Dual Multi Engine", "Daily Maintenance Entry"]
+        },
+        {
+          q: "מהו \"MDA\" בגישת נחיתת מכשירים?",
+          a: ["Minimum Descent Altitude — גובה ירידה מינימלי בגישה ללא Glideslope", "Maximum Distance Allowed", "Magnetic Drift Angle", "Multi Direction Approach"]
+        },
+        {
+          q: "בכניסה ל-Holding Pattern סטנדרטי, מה כיוון הפניות?",
+          a: ["ימינה (Right Turns) אלא אם פורסם אחרת", "שמאלה תמיד", "תלוי בכיוון הרוח", "אין כיוון מחייב — לפי שיקול הטייס"]
+        }
+      ]
+    };
+
+    var DOMAIN_ORDER = [
+      "ידע טכני כללי",
+      "מטאורולוגיה",
+      "רדיו טלפון",
+      "הכרת מטוס C-152 ספר פתוח",
+      "הכרת מטוס C-152 ספר סגור",
+      "נווטות",
+      "חוקה",
+      "ביצועי אנוש",
+      "מדר״ט מכשירים"
+    ];
+
+    function escapeText(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function answerHTML(idx, label, qid, pattern) {
+      var prefix = "abcd"[idx] + ". ";
+      var inputId = qid + "_" + "abcd"[idx];
+      var name = qid;
+      if (pattern === "label-for") {
+        return '<div class="r' + idx + '">' +
+          '<input type="radio" name="' + name + '" id="' + inputId + '">' +
+          '<label for="' + inputId + '">' + prefix + escapeText(label) + '</label>' +
+          '</div>';
+      }
+      if (pattern === "wrapped") {
+        return '<div class="r' + idx + '">' +
+          '<label><input type="radio" name="' + name + '"> ' + escapeText(label) + '</label>' +
+          '</div>';
+      }
+      // "row-clone" — input alone, no label.
+      return '<div class="r' + idx + '">' +
+        '<input type="radio" name="' + name + '"> ' + escapeText(label) +
+        '</div>';
+    }
+
+    // Vary labeling patterns across the 6 questions of each domain so the
+    // live UI exercises the same three fallbacks the scraper supports.
+    var PATTERNS = ["label-for", "label-for", "wrapped", "wrapped", "row-clone", "row-clone"];
+
+    function appendCustomMCQ(container, domain, idx) {
+      // Per-domain "build your own MCQ" slot. The visible inputs are
+      // textareas/text-fields the user types into. On every keystroke we
+      // mirror their content into the .qtext and answer-label slots that
+      // questionbot.js's scraper actually reads (innerText-based). Clicking
+      // the inject button then sends the user's freshly-typed Q + answers.
+      var qid = "qcustom_" + idx;
+      var letters = ["a", "b", "c", "d"];
+
+      var answersHtml = letters.map(function (ltr) {
+        var inputId = qid + "_" + ltr;
+        return '<div class="r' + letters.indexOf(ltr) + '">' +
+          '<input type="radio" name="' + qid + '" id="' + inputId + '">' +
+          '<label for="' + inputId + '" data-letter="' + ltr + '. ">' + ltr + '. </label>' +
+          '<input type="text" class="custom-a-input" placeholder="תשובה ' + ltr + '..." data-target="' + inputId + '">' +
+          '</div>';
+      }).join("");
+
+      var div = document.createElement("div");
+      div.className = "que multichoice custom";
+      div.setAttribute("data-domain", domain);
+      div.innerHTML =
+        '<div class="info">' +
+          '<span class="domain-tag">' + escapeText(domain) + '</span>' +
+          'שאלה ' + idx + ' — מותאמת אישית (custom). הקלד שאלה + 4 תשובות ולחץ ❓' +
+        '</div>' +
+        '<textarea class="custom-q-input" rows="2" placeholder="הקלד את השאלה שלך כאן..."></textarea>' +
+        '<div class="qtext" data-placeholder="(השאלה תוצג כאן — הקלד למעלה)"></div>' +
+        '<div class="answer">' + answersHtml + '</div>';
+      container.appendChild(div);
+    }
+
+    function renderQuestions() {
+      var container = document.getElementById("questions-container");
+      var idx = 0;
+      DOMAIN_ORDER.forEach(function (domain) {
+        var qs = QUESTIONS_BY_DOMAIN[domain] || [];
+        qs.forEach(function (q, i) {
+          idx += 1;
+          var pattern = PATTERNS[i];
+          var qid = "q" + idx;
+          var answersHtml = q.a.map(function (label, ai) {
+            return answerHTML(ai, label, qid, pattern);
+          }).join("");
+
+          var div = document.createElement("div");
+          div.className = "que multichoice";
+          div.setAttribute("data-domain", domain);
+          div.innerHTML =
+            '<div class="info">' +
+              '<span class="domain-tag">' + escapeText(domain) + '</span>' +
+              'שאלה ' + idx + ' — ' + escapeText(domain) +
+            '</div>' +
+            '<div class="qtext">' + escapeText(q.q) + '</div>' +
+            '<div class="answer">' + answersHtml + '</div>';
+          container.appendChild(div);
+        });
+        idx += 1;
+        appendCustomMCQ(container, domain, idx);
+      });
+    }
+
+    renderQuestions();
+
+    // Live-mirror the typed Q/A into the .qtext and answer-label nodes the
+    // questionbot.js scraper reads. Done via event delegation so it works
+    // on all 9 per-domain custom blocks without per-node listeners.
+    document.addEventListener("input", function (e) {
+      var t = e.target;
+      if (t.matches && t.matches(".custom-q-input")) {
+        var qte = t.closest(".que").querySelector(".qtext");
+        // Preserve the inject button (if already appended) and only replace
+        // the leading text node. Easiest: store the typed text in a property
+        // on .qtext and let the scraper read it. The questionbot scraper
+        // strips buttons before reading innerText, so we just need our text
+        // to be in .qtext as a text node.
+        // Wipe existing leading text-node(s), keep element children (button).
+        for (var i = qte.childNodes.length - 1; i >= 0; i--) {
+          var n = qte.childNodes[i];
+          if (n.nodeType === Node.TEXT_NODE) qte.removeChild(n);
+        }
+        qte.insertBefore(document.createTextNode(t.value), qte.firstChild);
+        return;
+      }
+      if (t.matches && t.matches(".custom-a-input")) {
+        var targetId = t.getAttribute("data-target");
+        var label = document.querySelector('label[for="' + targetId + '"]');
+        if (label) {
+          // Preserve the "a. "/"b. " etc. letter prefix; replace the rest.
+          var prefix = label.getAttribute("data-letter") || "";
+          label.textContent = prefix + t.value;
+        }
+      }
+    });
+  })();
+</script>
 
 <!-- AMD shim: capture the module that questionbot.js registers, then call init(). -->
 <script>
@@ -110,16 +477,27 @@
         return;
       }
 
-      var picker = document.getElementById("scenario-picker");
+      var scenarioPicker = document.getElementById("scenario-picker");
+      var domainPicker = document.getElementById("domain-picker");
 
-      // The plugin reads ajaxurl once at init time, so wrap fetch to inject the
-      // current scenario on every call.
+      // Wrap fetch to inject the *current* picker values on every call:
+      //   • scenario goes into the URL as a query param.
+      //   • coursename is rewritten in the JSON body so the live / live-proxy
+      //     paths forward the chosen course to skytutor for domain selection.
       var origFetch = window.fetch.bind(window);
       window.fetch = function (input, opts) {
         if (typeof input === "string" && input.indexOf("/ajax") === 0) {
           var u = new URL(input, window.location.origin);
-          u.searchParams.set("scenario", picker.value);
+          u.searchParams.set("scenario", scenarioPicker.value);
           input = u.pathname + u.search;
+
+          if (opts && typeof opts.body === "string") {
+            try {
+              var body = JSON.parse(opts.body);
+              body.coursename = domainPicker.value;
+              opts = Object.assign({}, opts, { body: JSON.stringify(body) });
+            } catch (e) { /* leave body unchanged if not JSON */ }
+          }
         }
         return origFetch(input, opts);
       };
@@ -130,7 +508,21 @@
         log.textContent += "[" + t + "] " + msg + "\n";
         log.scrollTop = log.scrollHeight;
       }
-      logLine("init() called");
+
+      // Show only the .que blocks matching the selected domain.
+      function showOnlyDomain(name) {
+        document.querySelectorAll(".que").forEach(function (q) {
+          var match = q.getAttribute("data-domain") === name;
+          q.classList.toggle("hidden", !match);
+        });
+      }
+      showOnlyDomain(domainPicker.value);
+
+      logLine("init() called — domain=" + domainPicker.value + " (showing 6 questions)");
+      domainPicker.addEventListener("change", function () {
+        showOnlyDomain(domainPicker.value);
+        logLine("domain changed → " + domainPicker.value);
+      });
 
       // Patch fetch a second time to log requests/responses for visibility.
       var loggedFetch = window.fetch;
@@ -151,27 +543,26 @@
         sesskey: "fake-sesskey-abc123",
         buttontext: "❓ הסבר לי את השאלה",
         courseid: 16,
-        // Course name must match a real enrollment when scenario=live; the
-        // canned scenarios ignore it. "ידע טכני כללי" is one of admin's
-        // active courses on the staging Moodle.
-        coursename: "ידע טכני כללי",
+        coursename: domainPicker.value,
         rtl: true
       });
 
-      // Scenario "dynamic-question": when the user clicks the picker option,
-      // append a fresh .que to verify the MutationObserver re-injects.
-      picker.addEventListener("change", function () {
-        if (picker.value !== "dynamic-question") return;
+      // Scenario "dynamic-question": when the user picks the option, append a
+      // fresh .que tagged with the currently-selected domain so it shows up
+      // under the current picker state.
+      scenarioPicker.addEventListener("change", function () {
+        if (scenarioPicker.value !== "dynamic-question") return;
         if (document.getElementById("dynamic-q")) return;
         var div = document.createElement("div");
         div.id = "dynamic-q";
         div.className = "que multichoice";
+        div.setAttribute("data-domain", domainPicker.value);
         div.innerHTML =
-          '<div class="info">שאלה 4 (נוצרה דינמית) — בודק את ה-MutationObserver</div>' +
+          '<div class="info"><span class="domain-tag">' + domainPicker.value + '</span>שאלה דינמית — בודק את ה-MutationObserver</div>' +
           '<div class="qtext">מה צפוי לחוות מבחינה אווירודינמית בטיסה דרך ענן רוטור?</div>' +
           '<div class="answer">' +
-          '  <div class="r0"><input type="radio" name="q4" id="q4_a"><label for="q4_a">a. טורבולנציה קשה ושינויי גובה חדים שאינם צפויים</label></div>' +
-          '  <div class="r1"><input type="radio" name="q4" id="q4_b"><label for="q4_b">b. אוויר חלק ויציב</label></div>' +
+          '  <div class="r0"><input type="radio" name="dyn" id="dyn_a"><label for="dyn_a">a. טורבולנציה קשה ושינויי גובה חדים</label></div>' +
+          '  <div class="r1"><input type="radio" name="dyn" id="dyn_b"><label for="dyn_b">b. אוויר חלק ויציב</label></div>' +
           '</div>';
         document.querySelector(".page").insertBefore(div, document.getElementById("qb-log"));
         logLine("appended dynamic .que — observer should inject a button automatically");
